@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Reset password · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-manga auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  <h1>Forgot password</h1>
+  <p>Enter the email on the account. The reply is the same whether or not that email is registered.</p>
+  <form method="post">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" required />
+    <button type="submit">Send reset link</button>
+  </form>
+</section>
+{% endblock %}

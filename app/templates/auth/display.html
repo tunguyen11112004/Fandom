@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Display · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-all auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  <h1>Display</h1>
+  <p>{% if current_user %}Saved on your account.{% else %}Saved in this browser until you sign in.{% endif %}</p>
+  <form method="post">
+    <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
+    <label for="theme">Mode</label>
+    <select id="theme" name="theme">
+      <option value="dark" {% if display.theme != 'light' %}selected{% endif %}>Dark</option>
+      <option value="light" {% if display.theme == 'light' %}selected{% endif %}>Light</option>
+    </select>
+    <label for="font">Type size</label>
+    <select id="font" name="font">
+      <option value="small" {% if display.font == 'small' %}selected{% endif %}>Small</option>
+      <option value="medium" {% if display.font == 'medium' %}selected{% endif %}>Medium</option>
+      <option value="large" {% if display.font == 'large' %}selected{% endif %}>Large</option>
+    </select>
+    <button type="submit">Apply</button>
+  </form>
+</section>
+{% endblock %}

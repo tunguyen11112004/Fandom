@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-all auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  <h1>Sign in</h1>
+  <p>Members use this gate. Admins use the separate admin gate.</p>
+  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+  <form method="post">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" required autocomplete="username" />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password" />
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="auth-links">
+    <a href="{{ url_for('account.register') }}">Register</a>
+    <a href="{{ url_for('account.forgot') }}">Forgot password</a>
+    <a href="{{ url_for('account.admin_login') }}">Admin gate</a>
+    <a href="{{ url_for('account.display') }}">Display</a>
+  </p>
+  <p>Demo member: mina@fanhub.plus · MemberHub#2026</p>
+</section>
+{% endblock %}

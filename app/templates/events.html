@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Events · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-map{% endblock %}
+{% block content %}
+    <header class="page-head">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="{{ url_for('main.home') }}">Home</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Events</span>
+      </nav>
+      <h1>Near you</h1>
+      <p>The same dates sit on the map and on the calendar. Ticket links, when a show has them, open outside the hub.</p>
+    </header>
+  <section class="section events-board">
+    <div class="hub-map hub-map-large" aria-label="Event cities">
+      {% for event in events %}
+        <a class="map-pin" href="#{{ event.slug }}" style="left: {{ event.x }}%; top: {{ event.y }}%;">
+          <span class="map-pin-dot"></span>
+          <span class="map-pin-label">{{ event.city }}</span>
+        </a>
+      {% endfor %}
+    </div>
+    <ol class="event-list" id="calendar">
+      {% for event in events %}
+        <li id="{{ event.slug }}">
+          <p class="kicker">{{ event.kind }}</p>
+          <h2>{{ event.name }}</h2>
+          <p>{{ event.city }} · <time>{{ event.when }}</time></p>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+{% endblock %}

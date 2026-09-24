@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Sitemap · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-map{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('main.home') }}">Home</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Sitemap</span>
+    </nav>
+    <h1>Sitemap</h1>
+    <p>Where the hub goes today. Later rooms — accounts, bookmarks, admin — are listed so the shape of the project stays visible.</p>
+  </header>
+  <div class="sitemap-columns">
+    <section>
+      <h2>Live</h2>
+      <ul>
+        <li><a href="{{ url_for('main.home') }}">Home</a></li>
+        <li><a href="{{ url_for('main.explore') }}">Explore</a></li>
+        <li><a href="{{ url_for('main.news') }}">News</a></li>
+        <li>Support chat, on every page</li>
+        {% for category in categories %}
+          <li>
+            <a href="{{ url_for('main.explore', category=category.slug) }}">{{ category.name }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+    <section>
+      <h2>Planned</h2>
+      <ul class="planned">
+        <li>Sign in and profiles</li>
+        <li>Personalized dashboard</li>
+        <li>Multimedia center</li>
+        <li>Character profiles and articles</li>
+        <li>Merchandise and upcoming releases</li>
+        <li>Feedback</li>
+        <li>Bookmarks and notes</li>
+        <li>Events and calendar</li>
+        <li>Admin panel</li>
+      </ul>
+    </section>
+  </div>
+{% endblock %}
