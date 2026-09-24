@@ -1,0 +1,12 @@
+<div class="liquid-photo"{% if picture %} style="background-image: url('{{ picture }}')"{% endif %} aria-hidden="true"></div>
+<div class="blast" aria-hidden="true">
+  <img src="{{ url_for('static', filename='images/hero-blast.png') }}" alt="" />
+  <span class="blast-veil"></span>
+  <span class="blast-pulse"></span>
+  <span class="blast-pulse blast-pulse-2"></span>
+</div>
+<div class="impact" aria-hidden="true">
+  <span class="impact-flash"></span>
+  <span class="impact-ring"></span>
+  <span class="impact-ring impact-ring-2"></span>
+</div>

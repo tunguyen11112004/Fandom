@@ -49,7 +49,7 @@ def auth_index():
     prefix = f"{settings.api_prefix}/auth"
     return ok(
         data={"prefix": prefix, "endpoints": AUTH_CATALOG},
-        message="Dùng POST /register hoặc POST /login. Mở /auth-ui để thử trên trình duyệt.",
+        message="Use POST /register or POST /login. Open /auth-ui to try it in the browser.",
     )
 
 
@@ -60,7 +60,7 @@ def register():
     payload = user_public(user)
     if settings.email_backend == "console":
         payload["debug_verify_token"] = raw_token
-    return ok(data=payload, message="Tài khoản đã tạo. Hãy xác minh email trước khi đăng nhập.")
+    return ok(data=payload, message="Account created. Verify your email before signing in.")
 
 
 @bp.post("/login")
@@ -81,7 +81,7 @@ def admin_login():
 def member_logout():
     body = parse_body(LogoutIn)
     logout(get_db(), body.refresh_token)
-    return ok(message="Đã đăng xuất.")
+    return ok(message="Signed out.")
 
 
 @bp.post("/refresh")
@@ -100,14 +100,14 @@ def me():
 def verify_email_get():
     token = request.args.get("token", "")
     verify_email(get_db(), token)
-    return ok(message="Email đã xác minh. Hãy đăng nhập.")
+    return ok(message="Email verified. Sign in.")
 
 
 @bp.post("/verify-email")
 def verify_email_post():
     body = parse_body(VerifyEmailIn)
     verify_email(get_db(), body.token)
-    return ok(message="Email đã xác minh. Hãy đăng nhập.")
+    return ok(message="Email verified. Sign in.")
 
 
 @bp.post("/resend-verification")
@@ -117,7 +117,7 @@ def resend():
     extra = None
     if settings.email_backend == "console" and raw:
         extra = {"debug_verify_token": raw}
-    return ok(data=extra, message="Nếu email hợp lệ và chưa xác minh, liên kết đã được gửi.")
+    return ok(data=extra, message="If that email is valid and unverified, a link has been sent.")
 
 
 @bp.post("/forgot-password")
@@ -134,7 +134,7 @@ def forgot():
 def reset():
     body = parse_body(ResetPasswordIn)
     reset_password(get_db(), body.token, body.password, body.password_confirm)
-    return ok(message="Mật khẩu mới đã có hiệu lực. Hãy đăng nhập.")
+    return ok(message="Your new password is ready. Sign in.")
 
 
 @bp.get("/reset-password")

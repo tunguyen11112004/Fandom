@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Feedback · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-news auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  <h1>Feedback</h1>
+  {% if sent %}<p>Got it. The desk can see it now.</p>{% endif %}
+  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+  <form method="post" id="feedback-form">
+    <label for="kind">Type</label>
+    <select id="kind" name="kind" required>
+      <option value="suggestion">Suggestion</option>
+      <option value="bug">Bug</option>
+      <option value="query">Question</option>
+    </select>
+    {% if not current_user %}
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required />
+    {% endif %}
+    <div id="bug-fields" hidden>
+      <label for="page_url">Page where it happened</label>
+      <input id="page_url" name="page_url" placeholder="/explore" />
+      <label for="steps">Steps to see it again</label>
+      <textarea id="steps" name="steps" rows="3"></textarea>
+    </div>
+    <label for="message">Message</label>
+    <textarea id="message" name="message" rows="5" required></textarea>
+    <button type="submit">Send</button>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const kind = document.querySelector("#kind");
+  const bug = document.querySelector("#bug-fields");
+  function sync() { bug.hidden = kind.value !== "bug"; }
+  kind.addEventListener("change", sync);
+  sync();
+</script>
+{% endblock %}

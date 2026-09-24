@@ -29,7 +29,7 @@ def page_args():
         page = max(1, int(request.args.get("page", 1)))
         page_size = min(100, max(1, int(request.args.get("page_size", 20))))
     except ValueError:
-        raise AuthError(400, "invalid_page", "page/page_size không hợp lệ.")
+        raise AuthError(400, "invalid_page", "page/page_size is not valid.")
     return page, page_size
 
 
@@ -72,7 +72,7 @@ def arg_int(name: str, default=None):
     try:
         return int(raw)
     except ValueError:
-        raise AuthError(400, "invalid_query", f"{name} phải là số.")
+        raise AuthError(400, "invalid_query", f"{name} must be a number.")
 
 
 def breadcrumbs(category=None, fandom=None, current: str | None = None) -> list[dict]:

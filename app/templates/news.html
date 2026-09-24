@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}News · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-news{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('main.home') }}">Home</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">News</span>
+    </nav>
+    <h1>Anime and manga news</h1>
+    <p>
+      {{ items|length }} headlines from September 2026.
+      This desk covers the anime and manga stories reported that month, with a link to each source.
+      It is not every article published worldwide.
+    </p>
+  </header>
+
+  <nav class="news-filters" aria-label="Filter headlines">
+    <a href="{{ url_for('main.news') }}" {% if not world %}aria-current="page"{% endif %}>All</a>
+    <a href="{{ url_for('main.news', world='anime') }}" {% if world == 'anime' %}aria-current="page"{% endif %}>Anime</a>
+    <a href="{{ url_for('main.news', world='manga') }}" {% if world == 'manga' %}aria-current="page"{% endif %}>Manga</a>
+  </nav>
+
+  <ol class="news-list page">
+    {% for item in items %}
+      <li>
+        <article class="news-item">
+          <p class="news-meta">
+            <time datetime="{{ item.date }}">{{ item.date }}</time>
+            <span class="tag">{{ item.world }}</span>
+            <span>{{ item.source }}</span>
+          </p>
+          <h2><a href="{{ item.url }}" rel="noopener noreferrer">{{ item.title }}</a></h2>
+          <p>{{ item.summary }}</p>
+        </article>
+      </li>
+    {% endfor %}
+  </ol>
+{% endblock %}

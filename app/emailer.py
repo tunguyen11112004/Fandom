@@ -32,27 +32,27 @@ def send_mail(to_email: str, subject: str, body: str) -> None:
 
 
 def send_verify_email(to_email: str, raw_token: str) -> None:
-    link = f"{settings.public_base_url}{settings.api_prefix}/auth/verify-email?token={raw_token}"
+    link = f"{settings.public_base_url}/verify/{raw_token}"
     send_mail(
         to_email,
-        "Xác minh email Fan Hub Plus",
-        f"Mở liên kết để kích hoạt tài khoản (hết hạn {settings.email_verify_hours} giờ):\n{link}\n",
+        "Verify your Fan Hub Plus email",
+        f"Open this link to activate your account (expires in {settings.email_verify_hours} hours):\n{link}\n",
     )
 
 
 def send_moderation_email(to_email: str, title: str, decision: str, reason: str | None = None) -> None:
-    extra = f"\nLý do: {reason}" if reason else ""
+    extra = f"\nReason: {reason}" if reason else ""
     send_mail(
         to_email,
-        f"Kết quả kiểm duyệt: {title}",
-        f"Bài \"{title}\" đã được {decision}.{extra}\n",
+        f"Moderation result: {title}",
+        f"Bài \"{title}\" was {decision}.{extra}\n",
     )
 
 
 def send_reset_email(to_email: str, raw_token: str) -> None:
-    link = f"{settings.public_base_url}{settings.api_prefix}/auth/reset-password?token={raw_token}"
+    link = f"{settings.public_base_url}/reset/{raw_token}"
     send_mail(
         to_email,
-        "Đặt lại mật khẩu Fan Hub Plus",
-        f"Mở liên kết để đặt lại mật khẩu (hết hạn {settings.password_reset_minutes} phút):\n{link}\n",
+        "Reset your Fan Hub Plus password",
+        f"Open this link to reset your password (expires in {settings.password_reset_minutes} minutes):\n{link}\n",
     )

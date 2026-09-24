@@ -1,26 +1,28 @@
-# FanHubPlus — backend tạm (Flask)
+# Fan Hub Plus (Flask + MySQL)
 
-Prefix **`/api/be/v1`**. Response luôn `{ "ok": true, "data": ... }` hoặc `{ "ok": false, "error": "...", "message": "..." }`.  
-Auth: `Authorization: Bearer <access_token>`. Frontend có thể gắn sau; hiện tại gọi API trực tiếp.
+JSON APIs live under **`/api/be/v1`**. Responses are `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "...", "message": "..." }`.  
+Auth: `Authorization: Bearer <access_token>`.
 
-Dump SQL: `sql/fanhubplus_all_in_one.sql`. Local mặc định SQLite `fanhubplus.db`.
+The site and the APIs share Laragon MySQL database `fanhubplus` (`DATABASE_URL=mysql+pymysql://root@127.0.0.1:3306/fanhubplus`). Import `sql/fanhubplus_all_in_one.sql` once if the schema is empty.
 
-## Chạy (Git Bash)
+## Run (Git Bash)
 
 ```bash
 cd /c/Users/ADMIN/FanHubPlus
 source .venv/Scripts/activate
-python -m app.main
+python run.py
 ```
 
-- http://127.0.0.1:8000/health
-- http://127.0.0.1:8000/sitemap
-- http://127.0.0.1:8000/auth-ui
-- QTV: `admin@fanhubplus.com` / `Admin123!`
+- http://127.0.0.1:5000
+- http://127.0.0.1:5000/health
+- http://127.0.0.1:5000/explore
+- Site admin (`/admin/login`): `admin@fanhub.plus` / `AdminHub#2026`
+- API admin (`POST /api/be/v1/auth/admin/login`): `admin@fanhubplus.com` / `Admin123!` (also works on `/admin/login`)
+- Demo member: `mina@fanhub.plus` / `MemberHub#2026`
 
-## API theo Use Case
+## API use cases
 
-| UC | Method | Path | Ai gọi |
+| UC | Method | Path | Who |
 |---|---|---|---|
 | UC-01 Register | POST | `/auth/register` | Visitor |
 | UC-01 Verify | GET/POST | `/auth/verify-email` | Visitor |
@@ -36,12 +38,12 @@ python -m app.main
 | UC-16 Favorites | PUT | `/me/favorites` | Member |
 | UC-16 Dashboard | GET/PUT | `/me/dashboard` | Member |
 | UC-06 Categories | GET | `/categories`, `/categories/<id>/fandoms` | Public |
-| UC-06 Fandoms | GET | `/fandoms` | Public (chỉ `is_active`) |
+| UC-06 Fandoms | GET | `/fandoms` | Public (`is_active` only) |
 | UC-07 Explorer | GET | `/contents?q=&category_id=&fandom_id=&genre_id=&type=&year=&sort=` | Public |
-| UC-07/09 Detail | GET | `/contents/<id>` | Public (tăng view) |
+| UC-07/09 Detail | GET | `/contents/<id>` | Public (increments views) |
 | UC-09 Featured | GET | `/contents/featured` | Public |
 | UC-08 Characters | GET | `/characters`, `/characters/<id>` | Public |
-| UC-10 Merch | GET | `/merchandise`, `/merchandise/upcoming`, `/merchandise/<id>` | Public (không bán) |
+| UC-10 Merch | GET | `/merchandise`, `/merchandise/upcoming`, `/merchandise/<id>` | Public (display only) |
 | UC-11/12 Rate | POST | `/contents/<id>/ratings` `{score:1-5}` | Member |
 | UC-13 Bookmark | GET/POST | `/bookmarks` | Member |
 | UC-13 Note | PATCH | `/bookmarks/<id>` | Member |
@@ -69,32 +71,32 @@ python -m app.main
 | UC-27 FAQ admin | GET/POST/PUT/DELETE | `/admin/faqs` | Admin |
 | UC-28 Reports | GET | `/admin/reports/overview` `user-growth` `content-performance` `category-performance` `engagement` `submissions-feedback` | Admin |
 
-`sort` của explorer: `latest` | `popular` | `alpha`. Khách chỉ tìm cơ bản (`q`, `category_id`, `type`); lọc nâng cao trả `login_required`. Draft/archived không ra public.
+`sort` for explorer: `latest` | `popular` | `alpha`. Guests may use `q`, `category_id`, `type` only; advanced filters return `login_required`. Drafts and archived rows stay off the public lists.
 
-**BR-09 độ phổ biến:** `views + 5*số_đánh_giá + round(avg*10) + 3*số_bookmark` (trùng `fn_popularity_score`).
+**BR-09 popularity:** `views + 5*rating_count + round(avg*10) + 3*bookmark_count` (same as `fn_popularity_score`).
 
-**BR-12:** tọa độ GPS chỉ nhận trên query `lat/lng`, không lưu DB.
+**BR-12:** GPS coordinates are accepted on query `lat`/`lng` only and are not stored.
 
 **UC-04:** `GET /me`, `PUT /me/favorites`, `POST /me/avatar` (JPEG/PNG/WebP, ≤2MB).
 
-**UC-06 hub:** `GET /categories/<id>` trả featured/articles/media/characters/merchandise + breadcrumbs.
+**UC-06 hub:** `GET /categories/<id>` returns featured, articles, media, characters, merchandise, plus breadcrumbs.
 
-**UC-10 upcoming gộp:** `GET /releases/upcoming`.
+**UC-10 upcoming:** `GET /releases/upcoming`.
 
-**UC-13:** POST bookmark lần 2 = bỏ đánh dấu; `?type=content|character|merchandise|event`; mục ẩn hiện `available: false`.
+**UC-13:** A second POST bookmark removes it; `?type=content|character|merchandise|event`; hidden items return `available: false`.
 
 **UC-21:** `POST /chat/onboarding` `{action: next|skip|set_categories}`.
 
-**UC-24 thông báo:** email console + `GET /me/notifications`. Gỡ bài đã xuất bản: `POST /admin/submissions/<id>/unpublish`.
+**UC-24 notices:** console email plus `GET /me/notifications`. Unpublish: `POST /admin/submissions/<id>/unpublish`.
 
 
-## MySQL
+## MySQL (Laragon)
 
 ```bash
-mysql -u root -p < sql/fanhubplus_all_in_one.sql
-mysql -u root -p fanhubplus < sql/user_sessions.sql
+mysql -u root < sql/fanhubplus_all_in_one.sql
+mysql -u root fanhubplus < sql/user_sessions.sql
 ```
 
 ```
-DATABASE_URL=mysql+pymysql://user:pass@localhost:3306/fanhubplus
+DATABASE_URL=mysql+pymysql://root@127.0.0.1:3306/fanhubplus
 ```

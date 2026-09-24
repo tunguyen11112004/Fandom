@@ -1,65 +1,105 @@
-from flask import g
+from flask import has_app_context
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
+from app.extensions import db
 
-connect_args = {}
-if settings.database_url.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
-
-engine = create_engine(settings.database_url, connect_args=connect_args)
+engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
+_COLUMN_EXTRAS = {
+    "users": {"session_version": "INT NOT NULL DEFAULT 1"},
+    "fandoms": {"is_active": "BOOLEAN NOT NULL DEFAULT TRUE"},
+    "fan_submissions": {
+        "fandom_id": "INT UNSIGNED NULL",
+        "content_type": "VARCHAR(20) NOT NULL DEFAULT 'article'",
+        "media_url": "VARCHAR(500) NULL",
+        "source_url": "VARCHAR(500) NULL",
+        "rights_confirmed": "BOOLEAN NOT NULL DEFAULT FALSE",
+    },
+    "feedbacks": {
+        "page_url": "VARCHAR(500) NULL",
+        "reproduction_steps": "TEXT NULL",
+        "browser_info": "VARCHAR(500) NULL",
+        "is_deleted": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "deleted_by": "INT UNSIGNED NULL",
+        "deleted_at": "DATETIME NULL",
+    },
+    "bookmarks": {"event_id": "INT UNSIGNED NULL"},
+}
 
-class Base(DeclarativeBase):
-    pass
+_EXTRA_TABLES = [
+    """
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      session_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      user_id INT UNSIGNED NOT NULL,
+      refresh_token_hash CHAR(64) NOT NULL,
+      expires_at DATETIME NOT NULL,
+      revoked_at DATETIME NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (session_id),
+      UNIQUE KEY uq_user_sessions_hash (refresh_token_hash),
+      KEY idx_user_sessions_user (user_id),
+      CONSTRAINT fk_user_sessions_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+    ) ENGINE=InnoDB
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS notifications (
+      notification_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      user_id INT UNSIGNED NOT NULL,
+      title VARCHAR(200) NOT NULL,
+      body TEXT NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (notification_id),
+      KEY idx_notifications_user (user_id),
+      CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+    ) ENGINE=InnoDB
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS user_dashboard_widgets (
+      user_id INT UNSIGNED NOT NULL,
+      widget_key VARCHAR(30) NOT NULL,
+      is_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INT NOT NULL DEFAULT 0,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, widget_key),
+      CONSTRAINT fk_udw_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+    ) ENGINE=InnoDB
+    """,
+]
 
 
-def _add_column(conn, table: str, column: str, ddl: str) -> None:
-    cols = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
-    if column not in cols:
-        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {ddl}"))
-
-
-def ensure_sqlite_schema() -> None:
-    if not settings.database_url.startswith("sqlite"):
-        return
+def ensure_mysql_schema() -> None:
+    if not settings.database_url.startswith("mysql"):
+        raise RuntimeError("FanHubPlus uses MySQL. Set DATABASE_URL to a mysql+pymysql:// connection.")
     with engine.begin() as conn:
-        tables = {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))}
-        if "users" in tables:
-            _add_column(conn, "users", "session_version", "session_version INTEGER NOT NULL DEFAULT 1")
-        if "fandoms" in tables:
-            _add_column(conn, "fandoms", "is_active", "is_active BOOLEAN NOT NULL DEFAULT 1")
-        if "contents" in tables:
-            _add_column(conn, "contents", "source_name", "source_name VARCHAR(150)")
-            _add_column(conn, "contents", "source_url", "source_url VARCHAR(500)")
-            _add_column(conn, "contents", "license_url", "license_url VARCHAR(500)")
-            _add_column(conn, "contents", "rights_confirmed", "rights_confirmed BOOLEAN NOT NULL DEFAULT 0")
-        if "fan_submissions" in tables:
-            _add_column(conn, "fan_submissions", "content_type", "content_type VARCHAR(20) NOT NULL DEFAULT 'article'")
-            _add_column(conn, "fan_submissions", "media_url", "media_url VARCHAR(500)")
-            _add_column(conn, "fan_submissions", "source_url", "source_url VARCHAR(500)")
-            _add_column(conn, "fan_submissions", "rights_confirmed", "rights_confirmed BOOLEAN NOT NULL DEFAULT 0")
-            _add_column(conn, "fan_submissions", "fandom_id", "fandom_id INTEGER")
-        if "feedbacks" in tables:
-            _add_column(conn, "feedbacks", "page_url", "page_url VARCHAR(500)")
-            _add_column(conn, "feedbacks", "reproduction_steps", "reproduction_steps TEXT")
-            _add_column(conn, "feedbacks", "browser_info", "browser_info VARCHAR(500)")
-            _add_column(conn, "feedbacks", "is_deleted", "is_deleted BOOLEAN NOT NULL DEFAULT 0")
-            _add_column(conn, "feedbacks", "deleted_by", "deleted_by INTEGER")
-            _add_column(conn, "feedbacks", "deleted_at", "deleted_at DATETIME")
-        if "bookmarks" in tables:
-            _add_column(conn, "bookmarks", "event_id", "event_id INTEGER")
+        for ddl in _EXTRA_TABLES:
+            conn.execute(text(ddl))
+        for table, columns in _COLUMN_EXTRAS.items():
+            existing = {
+                row[0]
+                for row in conn.execute(
+                    text(
+                        "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table"
+                    ),
+                    {"table": table},
+                )
+            }
+            if not existing:
+                continue
+            for name, ddl in columns.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def get_db():
-    if "db" not in g:
-        g.db = SessionLocal()
-    return g.db
+    if has_app_context():
+        return db.session
+    return SessionLocal()
 
 
 def close_db(_exc=None):
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
+    return None

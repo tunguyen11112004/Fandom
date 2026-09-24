@@ -44,12 +44,12 @@ def upload_avatar():
     user = get_current_user()
     file = request.files.get("file")
     if file is None or not file.filename:
-        raise AuthError(400, "file_required", "Chọn file ảnh đại diện.")
+        raise AuthError(400, "file_required", "Choose an avatar image.")
     if file.mimetype not in AVATAR_TYPES:
-        raise AuthError(400, "invalid_file", "Chỉ nhận JPEG, PNG hoặc WebP.")
+        raise AuthError(400, "invalid_file", "Only JPEG, PNG, or WebP is accepted.")
     data = file.read()
     if len(data) > 2 * 1024 * 1024:
-        raise AuthError(400, "file_too_large", "Ảnh tối đa 2MB.")
+        raise AuthError(400, "file_too_large", "Avatars must be 2MB or smaller.")
     from pathlib import Path
 
     folder = Path("uploads/avatars")
@@ -76,7 +76,7 @@ def read_notification(notification_id: int):
     db = get_db()
     row = db.get(Notification, notification_id)
     if row is None or row.user_id != user.user_id:
-        raise AuthError(404, "not_found", "Không tìm thấy thông báo.")
+        raise AuthError(404, "not_found", "Notification not found.")
     row.is_read = True
     db.commit()
     return ok(data=row_dict(row))
@@ -94,11 +94,11 @@ def patch_me():
         user.avatar_url = body.avatar_url
     if body.theme is not None:
         if body.theme not in ("light", "dark"):
-            raise AuthError(400, "invalid_theme", "theme phải là light hoặc dark.")
+            raise AuthError(400, "invalid_theme", "theme must be light or dark.")
         user.theme = body.theme
     if body.font_size is not None:
         if body.font_size not in ("small", "medium", "large"):
-            raise AuthError(400, "invalid_font", "font_size phải là small, medium hoặc large.")
+            raise AuthError(400, "invalid_font", "font_size must be small, medium, or large.")
         user.font_size = body.font_size
     get_db().commit()
     return ok(data=user_public(user))
@@ -130,11 +130,11 @@ def dashboard():
     db = get_db()
     hour = (user.last_login_at.hour if user.last_login_at else 9)
     if hour < 12:
-        greet = "Chào buổi sáng"
+        greet = "Good morning"
     elif hour < 18:
-        greet = "Chào buổi chiều"
+        greet = "Good afternoon"
     else:
-        greet = "Chào buổi tối"
+        greet = "Good evening"
     cats = [row_dict(c) for c in db.query(Category).join(UserCategory).filter(UserCategory.user_id == user.user_id).all()]
     fans = [row_dict(f) for f in db.query(Fandom).join(UserFandom).filter(UserFandom.user_id == user.user_id).all()]
     logs = db.query(ActivityLog).filter(ActivityLog.user_id == user.user_id).order_by(ActivityLog.created_at.desc()).limit(10).all()
@@ -159,7 +159,7 @@ def dashboard():
             "events": [row_dict(e) for e in events],
             "layout": [row_dict(w) for w in widgets],
             "empty": not logs and not bms and not cats,
-            "empty_hint": None if (logs or bms or cats) else "Chọn fandom yêu thích để cá nhân hóa dashboard (UC-04).",
+            "empty_hint": None if (logs or bms or cats) else "Pick favorite fandoms to personalize the dashboard (UC-04).",
         }
     )
 

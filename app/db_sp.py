@@ -16,14 +16,14 @@ def _raise_from_sql(exc: Exception) -> None:
     msg = str(exc)
     lowered = msg.lower()
     if "email already registered" in lowered or "duplicate" in lowered:
-        raise AuthError(409, "email_exists", "Email đã tồn tại. Hãy đăng nhập hoặc khôi phục mật khẩu.") from exc
+        raise AuthError(409, "email_exists", "That email is already registered. Sign in or reset the password.") from exc
     if "invalid name or email" in lowered:
-        raise AuthError(400, "invalid_input", "Tên hoặc email không hợp lệ.") from exc
+        raise AuthError(400, "invalid_input", "Name or email is not valid.") from exc
     if "invalid or expired token" in lowered:
-        raise AuthError(400, "invalid_token", "Liên kết không hợp lệ hoặc hết hạn.") from exc
+        raise AuthError(400, "invalid_token", "That link is invalid or expired.") from exc
     if "user not found or inactive" in lowered:
-        raise AuthError(403, "account_locked", "Tài khoản đã bị khóa.") from exc
-    raise AuthError(400, "db_error", "Không thực hiện được thao tác dữ liệu.") from exc
+        raise AuthError(403, "account_locked", "This account is locked.") from exc
+    raise AuthError(400, "db_error", "The database could not complete that action.") from exc
 
 
 def _log(db: Session, user_id: int | None, action: str, entity_type: str | None, entity_id: int | None, details: str | None = None) -> None:
@@ -52,7 +52,7 @@ def sp_register_user(db: Session, name: str, email: str, password_hash: str) -> 
             _raise_from_sql(exc)
         user = db.get(User, int(user_id))
         if user is None:
-            raise AuthError(500, "db_error", "Không tạo được tài khoản.")
+            raise AuthError(500, "db_error", "The account could not be created.")
         return user
 
     user = User(name=name.strip(), email=email.lower().strip(), password_hash=password_hash, role="user")
@@ -147,10 +147,10 @@ def sp_verify_email(db: Session, token_hash: str) -> User:
             .first()
         )
         if row is None:
-            raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+            raise AuthError(400, "invalid_token", "That link is not valid.")
         user = db.get(User, row.user_id)
         if user is None:
-            raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+            raise AuthError(400, "invalid_token", "That link is not valid.")
         return user
 
     row = (
@@ -159,14 +159,14 @@ def sp_verify_email(db: Session, token_hash: str) -> User:
         .first()
     )
     if row is None:
-        raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+        raise AuthError(400, "invalid_token", "That link is not valid.")
     if row.used_at is not None:
-        raise AuthError(400, "token_used", "Liên kết đã được dùng. Hãy yêu cầu liên kết mới.")
+        raise AuthError(400, "token_used", "That link was already used. Request a new one.")
     if row.expires_at < utcnow():
-        raise AuthError(400, "token_expired", "Liên kết hết hạn. Hãy yêu cầu liên kết mới.")
+        raise AuthError(400, "token_expired", "That link expired. Request a new one.")
     user = db.get(User, row.user_id)
     if user is None:
-        raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+        raise AuthError(400, "invalid_token", "That link is not valid.")
     row.used_at = utcnow()
     user.email_verified_at = utcnow()
     _log(db, user.user_id, "email_verified", "user", user.user_id)
@@ -192,10 +192,10 @@ def sp_reset_password(db: Session, token_hash: str, new_password_hash: str) -> U
             .first()
         )
         if row is None:
-            raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+            raise AuthError(400, "invalid_token", "That link is not valid.")
         user = db.get(User, row.user_id)
         if user is None:
-            raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+            raise AuthError(400, "invalid_token", "That link is not valid.")
         return user
 
     row = (
@@ -204,14 +204,14 @@ def sp_reset_password(db: Session, token_hash: str, new_password_hash: str) -> U
         .first()
     )
     if row is None:
-        raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+        raise AuthError(400, "invalid_token", "That link is not valid.")
     if row.used_at is not None:
-        raise AuthError(400, "token_used", "Liên kết đã được dùng. Hãy yêu cầu liên kết mới.")
+        raise AuthError(400, "token_used", "That link was already used. Request a new one.")
     if row.expires_at < utcnow():
-        raise AuthError(400, "token_expired", "Liên kết hết hạn. Hãy yêu cầu liên kết mới.")
+        raise AuthError(400, "token_expired", "That link expired. Request a new one.")
     user = db.get(User, row.user_id)
     if user is None:
-        raise AuthError(400, "invalid_token", "Liên kết không hợp lệ.")
+        raise AuthError(400, "invalid_token", "That link is not valid.")
     now = utcnow()
     user.password_hash = new_password_hash
     for tok in (

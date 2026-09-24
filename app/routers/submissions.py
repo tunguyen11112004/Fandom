@@ -22,8 +22,8 @@ def _notify_owner(db, user_id: int, title: str, decision: str, reason: str | Non
     db.add(
         Notification(
             user_id=user_id,
-            title=f"Kiểm duyệt: {title}",
-            body=f"Bài đã được {decision}." + (f" Lý do: {reason}" if reason else ""),
+            title=f"Moderation: {title}",
+            body=f"The piece was {decision}." + (f" Reason: {reason}" if reason else ""),
         )
     )
 
@@ -41,15 +41,15 @@ def submit():
     db = get_db()
     body = parse_body(SubmissionIn)
     if not body.rights_confirmed:
-        raise AuthError(400, "rights_required", "Phải xác nhận quyền sử dụng nội dung.")
+        raise AuthError(400, "rights_required", "You must confirm you have the right to share this.")
     if db.get(Category, body.category_id) is None:
-        raise AuthError(400, "not_found", "Category không tồn tại.")
+        raise AuthError(400, "not_found", "Category not found.")
     if body.fandom_id:
         fan = db.get(Fandom, body.fandom_id)
         if fan is None or not fan.is_active:
-            raise AuthError(400, "not_found", "Fandom không tồn tại.")
+            raise AuthError(400, "not_found", "Fandom not found.")
     if body.content_type not in ("article", "video", "audio", "image", "trailer", "explainer"):
-        raise AuthError(400, "invalid_type", "Loại nội dung không hợp lệ.")
+        raise AuthError(400, "invalid_type", "That content type is not valid.")
     row = FanSubmission(
         user_id=user.user_id,
         category_id=body.category_id,
@@ -76,12 +76,12 @@ def resubmit(submission_id: int):
     db = get_db()
     row = db.get(FanSubmission, submission_id)
     if row is None or row.user_id != user.user_id:
-        raise AuthError(404, "not_found", "Không tìm thấy submission.")
+        raise AuthError(404, "not_found", "Submission not found.")
     if row.status != "rejected":
-        raise AuthError(400, "invalid_status", "Chỉ được gửi lại bài bị từ chối.")
+        raise AuthError(400, "invalid_status", "Only a rejected submission can be sent again.")
     body = parse_body(SubmissionIn)
     if not body.rights_confirmed:
-        raise AuthError(400, "rights_required", "Phải xác nhận quyền sử dụng nội dung.")
+        raise AuthError(400, "rights_required", "You must confirm you have the right to share this.")
     row.category_id = body.category_id
     row.fandom_id = body.fandom_id
     row.content_type = body.content_type
@@ -119,25 +119,25 @@ def review(submission_id: int):
     db = get_db()
     row = db.get(FanSubmission, submission_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy submission.")
+        raise AuthError(404, "not_found", "Submission not found.")
     if row.status != "pending":
-        raise AuthError(400, "invalid_status", "Submission không còn ở hàng chờ.")
+        raise AuthError(400, "invalid_status", "That submission is no longer in the queue.")
     body = parse_body(ReviewIn)
     if body.decision not in ("approved", "rejected"):
-        raise AuthError(400, "invalid_decision", "decision phải là approved hoặc rejected.")
+        raise AuthError(400, "invalid_decision", "decision must be approved or rejected.")
     now = utcnow()
     row.reviewed_by = admin.user_id
     row.reviewed_at = now
     if body.decision == "rejected":
         if not body.reject_reason:
-            raise AuthError(400, "reason_required", "Từ chối phải có lý do.")
+            raise AuthError(400, "reason_required", "A rejection needs a reason.")
         row.status = "rejected"
         row.reject_reason = body.reject_reason
         db.add(ModerationLog(submission_id=row.submission_id, admin_id=admin.user_id, action="rejected", reason=body.reject_reason))
         log_activity(db, admin.user_id, "submission_rejected", "submission", row.submission_id)
-        _notify_owner(db, row.user_id, row.title, "từ chối", body.reject_reason)
+        _notify_owner(db, row.user_id, row.title, "rejected", body.reject_reason)
         db.commit()
-        return ok(data=row_dict(row), message="Đã từ chối.")
+        return ok(data=row_dict(row), message="Đã rejected.")
     cat_id = body.category_id or row.category_id
     content = Content(
         category_id=cat_id,
@@ -164,9 +164,9 @@ def review(submission_id: int):
     row.published_content_id = content.content_id
     db.add(ModerationLog(submission_id=row.submission_id, admin_id=admin.user_id, action="approved"))
     log_activity(db, admin.user_id, "submission_approved", "submission", row.submission_id)
-    _notify_owner(db, row.user_id, row.title, "duyệt và xuất bản")
+    _notify_owner(db, row.user_id, row.title, "approved and published")
     db.commit()
-    return ok(data=row_dict(row, extra={"published_content_id": content.content_id}), message="Đã duyệt và xuất bản.")
+    return ok(data=row_dict(row, extra={"published_content_id": content.content_id}), message="Đã approved and published.")
 
 
 @bp.post("/admin/submissions/<int:submission_id>/unpublish")
@@ -175,16 +175,16 @@ def unpublish(submission_id: int):
     db = get_db()
     row = db.get(FanSubmission, submission_id)
     if row is None or row.status != "approved" or not row.published_content_id:
-        raise AuthError(400, "invalid_status", "Chỉ gỡ bài đã xuất bản.")
+        raise AuthError(400, "invalid_status", "Only a published piece can be taken down.")
     from flask import request as flask_request
 
     payload = flask_request.get_json(silent=True) or {}
-    reason = payload.get("reject_reason") or "Gỡ sau khi xuất bản"
+    reason = payload.get("reject_reason") or "Taken down after publishing"
     content = db.get(Content, row.published_content_id)
     if content:
         content.status = "archived"
     db.add(ModerationLog(submission_id=row.submission_id, admin_id=admin.user_id, action="rejected", reason=reason))
     log_activity(db, admin.user_id, "submission_unpublish", "submission", row.submission_id)
-    _notify_owner(db, row.user_id, row.title, "gỡ khỏi trang", reason)
+    _notify_owner(db, row.user_id, row.title, "removed from the site", reason)
     db.commit()
-    return ok(data=row_dict(row), message="Đã gỡ nội dung đã xuất bản.")
+    return ok(data=row_dict(row), message="The published piece was taken down.")

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Admin sign in · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-comics auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  <h1>Admin gate</h1>
+  <p>Only an administrator can open the control panel. A member account is refused here.</p>
+  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+  <form method="post">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" required autocomplete="username" />
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password" />
+    <button type="submit">Enter the panel</button>
+  </form>
+  <p>Demo admin: admin@fanhub.plus · AdminHub#2026</p>
+</section>
+{% endblock %}

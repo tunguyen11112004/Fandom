@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Events · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-map{% endblock %}
+{% block content %}
+    <header class="page-head">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="{{ url_for('main.home') }}">Home</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Events</span>
+      </nav>
+      <h1>Near you</h1>
+      <p>Allow location to sort by distance, or pick a city. Ticket links open in a new tab. Nothing is sold here.</p>
+    </header>
+  <form class="filters" method="get">
+    <div>
+      <label for="city">City</label>
+      <select id="city" name="city">
+        <option value="">All cities</option>
+        {% for name in cities %}
+          <option value="{{ name }}" {% if city == name %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="event_type">Type</label>
+      <select id="event_type" name="event_type">
+        <option value="">All types</option>
+        {% for name in types %}
+          <option value="{{ name }}" {% if event_type == name %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit">Filter</button>
+      <button type="button" id="use-location">Use my location</button>
+    </div>
+  </form>
+  <section class="section events-board">
+    <div class="hub-map hub-map-large" aria-label="Event cities">
+      {% for event in events %}
+        <a class="map-pin" href="#{{ event.id }}" style="{{ event.style }}">
+          <span class="map-pin-dot"></span>
+          <span class="map-pin-label">{{ event.city }}</span>
+        </a>
+      {% endfor %}
+    </div>
+    <ol class="event-list" id="calendar">
+      {% for event in events %}
+        <li id="{{ event.id }}">
+          <p class="kicker">{{ event.kind }}</p>
+          <h2>{{ event.title }}</h2>
+          <p>{{ event.city }} · <time>{{ event.when }}</time>{% if event.distance_km %} · {{ event.distance_km }} km{% endif %}</p>
+          {% if event.ticket_url %}
+            <p><a href="{{ event.ticket_url }}" target="_blank" rel="noreferrer">Tickets</a></p>
+          {% endif %}
+          {% if current_user and current_user.is_member %}
+            <form method="post" action="{{ url_for('account.bookmark_event', event_id=event.id) }}">
+              <button type="submit">Bookmark this date</button>
+            </form>
+          {% endif %}
+        </li>
+      {% else %}
+        <li><p class="empty">No events match. Widen the city filter or switch the map pins.</p></li>
+      {% endfor %}
+    </ol>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const btn = document.querySelector("#use-location");
+  if (btn && navigator.geolocation) {
+    btn.addEventListener("click", () => {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const url = new URL(location.href);
+        url.searchParams.set("lat", pos.coords.latitude.toFixed(4));
+        url.searchParams.set("lng", pos.coords.longitude.toFixed(4));
+        location.href = url.toString();
+      }, () => {
+        alert("Location was refused. Pick a city instead.");
+      });
+    });
+  }
+</script>
+{% endblock %}

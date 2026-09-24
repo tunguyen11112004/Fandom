@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}{% if category_name %}{{ category_name }}{% else %}Explore{% endif %} · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-{{ filters.category or 'all' }}{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('main.home') }}">Home</a>
+      <span aria-hidden="true">/</span>
+      {% if category_name %}
+        <a href="{{ url_for('main.explore') }}">Explore</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{{ category_name }}</span>
+      {% else %}
+        <span aria-current="page">Explore</span>
+      {% endif %}
+    </nav>
+    <h1>{% if category_name %}{{ category_name }}{% else %}The stacks{% endif %}</h1>
+    <p>
+      {{ total_items }}
+      {% if total_items == 1 %}item{% else %}items{% endif %}
+      {% if filters.q %}matching “{{ filters.q }}”{% endif %}
+    </p>
+  </header>
+
+  {% if shelf %}
+    <section class="section" aria-labelledby="wall-heading">
+      <div class="section-head">
+        <h2 id="wall-heading">{% if filters.category == 'manga' %}On the page{% else %}On screen{% endif %}</h2>
+      </div>
+      <ul class="color-wall">
+        {% for series in shelf %}
+          <li style="--accent: {{ series.accent }}; animation-delay: {{ loop.index0 * 0.05 }}s">
+            <article class="color-tile">
+              {% if series.image %}
+                <img src="{{ url_for('static', filename='images/series/' + series.image) }}" alt="" />
+              {% endif %}
+              <span>{{ series.name }}</span>
+            </article>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  <section class="filter-stage">
+    <header class="filter-lead">
+      <h2>{% if category_name %}Search {{ category_name }}{% else %}Search the shelves{% endif %}</h2>
+      <p>{% if can_filter %}Title, genre, year, type, and how loved a piece is.{% else %}Guests can search by keyword, category, and type. Sign in for genre, year, popularity, and extra sorts.{% endif %}</p>
+    </header>
+  <form class="filters" method="get" action="{{ url_for('main.explore') }}">
+    <div class="filter-search">
+      <label for="q">Search</label>
+      <input id="q" name="q" type="search" value="{{ filters.q }}" placeholder="Title, genre, or summary" />
+    </div>
+    <div>
+      <label for="category">Category</label>
+      <select id="category" name="category">
+        <option value="">All categories</option>
+        {% for category in categories %}
+          <option value="{{ category.slug }}" {% if filters.category == category.slug %}selected{% endif %}>
+            {{ category.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="genre">Genre</label>
+      <select id="genre" name="genre" {% if not can_filter %}disabled{% endif %}>
+        <option value="">All genres</option>
+        {% for genre in genres %}
+          <option value="{{ genre }}" {% if filters.genre == genre %}selected{% endif %}>{{ genre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="year">Release year</label>
+      <select id="year" name="year" {% if not can_filter %}disabled{% endif %}>
+        <option value="">Any year</option>
+        {% for year in years %}
+          <option value="{{ year }}" {% if filters.year == year|string %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="type">Content type</label>
+      <select id="type" name="type">
+        <option value="">All types</option>
+        {% for type_name in ["article", "video", "audio", "image"] %}
+          <option value="{{ type_name }}" {% if filters.type == type_name %}selected{% endif %}>
+            {{ type_name|capitalize }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="popularity">Popularity</label>
+      <select id="popularity" name="popularity" {% if not can_filter %}disabled{% endif %}>
+        <option value="">Any popularity</option>
+        <option value="iconic" {% if filters.popularity == "iconic" %}selected{% endif %}>Iconic (90+)</option>
+        <option value="notable" {% if filters.popularity == "notable" %}selected{% endif %}>Notable (75–89)</option>
+        <option value="rising" {% if filters.popularity == "rising" %}selected{% endif %}>Rising (under 75)</option>
+      </select>
+    </div>
+    <div>
+      <label for="sort">Sort</label>
+      <select id="sort" name="sort" {% if not can_filter %}disabled{% endif %}>
+        {% for key, label in sorts.items() %}
+          <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit">Apply</button>
+      <a href="{{ url_for('main.explore') }}">Clear</a>
+      {% if not can_filter %}
+        <a href="{{ url_for('account.login', next=request.full_path) }}">Sign in for advanced filters</a>
+      {% endif %}
+    </div>
+  </form>
+  </section>
+
+  {% if items %}
+    <ul class="card-grid">
+      {% for item in items %}
+        <li>
+          <a class="content-card" href="{{ url_for('main.content_detail', slug=item.slug) }}">
+            {% if item.image_path %}
+              <img src="{{ url_for('static', filename='images/catalog/' + item.image_path) }}" alt="" />
+            {% endif %}
+            <div class="card-copy">
+            <span class="type">{{ item.content_type }}</span>
+            <h2>{{ item.title }}</h2>
+            <p>{{ item.summary }}</p>
+            <dl>
+              <div>
+                <dt>Category</dt>
+                <dd>{{ item.category.name }}</dd>
+              </div>
+              <div>
+                <dt>Genre</dt>
+                <dd>{{ item.genre }}</dd>
+              </div>
+              <div>
+                <dt>Year</dt>
+                <dd>{{ item.release_year }}</dd>
+              </div>
+              <div>
+                <dt>Popularity</dt>
+                <dd>{{ item.popularity_score }}</dd>
+              </div>
+            </dl>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+    {% if pages > 1 %}
+      <nav class="crumbs" aria-label="Pages">
+        {% if page > 1 %}<a href="{{ url_for('main.explore', page=page-1, q=filters.q, category=filters.category, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, sort=sort) }}">Previous</a>{% endif %}
+        <span>Page {{ page }} of {{ pages }}</span>
+        {% if page < pages %}<a href="{{ url_for('main.explore', page=page+1, q=filters.q, category=filters.category, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, sort=sort) }}">Next</a>{% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p class="empty">Nothing in the stacks matches those filters. Widen the search, or <a href="#support-panel">ask the chatbot</a>.</p>
+  {% endif %}
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/explore.js') }}"></script>
+{% endblock %}

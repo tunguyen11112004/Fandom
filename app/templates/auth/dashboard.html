@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Your desk · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-cosplay auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <header class="desk-top">
+    <div class="desk-hero">
+      {% if user.avatar_path %}
+        <img class="avatar" src="{{ url_for('static', filename=user.avatar_path) }}" alt="" />
+      {% else %}
+        <span class="avatar avatar-fallback" aria-hidden="true">{{ user.name[:1] }}</span>
+      {% endif %}
+      <div>
+        <p class="kicker">Member desk</p>
+        <h1>Hello, {{ user.name }}</h1>
+        <p>{% if user.favorite %}Following {{ user.favorite }}.{% else %}Add a favorite fandom so this desk can follow you.{% endif %}</p>
+      </div>
+    </div>
+    <nav class="desk-actions" aria-label="Member actions">
+      <a href="{{ url_for('account.profile') }}">Profile</a>
+      <a href="{{ url_for('account.submissions') }}">Send a piece</a>
+      <a href="{{ url_for('account.feedback') }}">Feedback</a>
+      <a href="{{ url_for('main.explore') }}">Explore</a>
+    </nav>
+  </header>
+
+  <ul class="kpi-row">
+    <li><span>Bookmarks</span><strong>{{ bookmarks|length }}</strong></li>
+    <li><span>Pieces sent</span><strong>{{ submissions|length }}</strong></li>
+    <li><span>Recent moves</span><strong>{{ activity|length }}</strong></li>
+    <li><span>Favorite</span><strong class="kpi-text">{{ user.favorite or "Not set" }}</strong></li>
+  </ul>
+
+  <div class="desk-grid">
+    <section class="panel-card">
+      <header class="panel-head">
+        <h2>Recent activity</h2>
+        <p>What you opened, saved, and sent.</p>
+      </header>
+      {% if activity %}
+        <ol class="timeline">
+          {% for row in activity %}
+            <li>
+              <span class="chip">{{ row.kind }}</span>
+              {% if row.href %}<a href="{{ row.href }}">{{ row.summary }}</a>{% else %}{{ row.summary }}{% endif %}
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <p class="empty-line">Nothing here yet. Open a title, bookmark it, or send a fan piece.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel-card">
+      <header class="panel-head">
+        <h2>From your fandoms</h2>
+        <p>Matched from your favorite and the categories you picked.</p>
+      </header>
+      {% if picks %}
+        <ul class="desk-list">
+          {% for item in picks %}
+            <li>
+              <a href="{{ url_for('main.content_detail', slug=item.slug) }}">{{ item.title }}</a>
+              <span class="chip">{{ item.category.name }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-line">Choose a favorite fandom or a few categories on your profile.</p>
+        <p><a href="{{ url_for('account.profile') }}">Set that up</a></p>
+      {% endif %}
+    </section>
+
+    <section class="panel-card">
+      <header class="panel-head">
+        <h2>Bookmarks</h2>
+        <nav class="chip-row" aria-label="Bookmark types">
+          <a href="{{ url_for('account.dashboard') }}" {% if not kind %}aria-current="true"{% endif %}>All</a>
+          <a href="{{ url_for('account.dashboard', kind='article') }}" {% if kind == 'article' %}aria-current="true"{% endif %}>Articles</a>
+          <a href="{{ url_for('account.dashboard', kind='video') }}" {% if kind == 'video' %}aria-current="true"{% endif %}>Video</a>
+          <a href="{{ url_for('account.dashboard', kind='character') }}" {% if kind == 'character' %}aria-current="true"{% endif %}>Characters</a>
+          <a href="{{ url_for('account.dashboard', kind='merchandise') }}" {% if kind == 'merchandise' %}aria-current="true"{% endif %}>Merch</a>
+        </nav>
+      </header>
+      {% if bookmarks %}
+        <ul class="desk-list">
+          {% for row in bookmarks %}
+            <li>
+              <div class="row-title">
+                {% if row.content %}
+                  {% if row.content.published %}
+                    <a href="{{ url_for('main.content_detail', slug=row.content.slug) }}">{{ row.content.title }}</a>
+                  {% else %}
+                    <span>{{ row.content.title }}</span>
+                    <span class="chip chip-warn">Unavailable</span>
+                  {% endif %}
+                {% elif row.character %}
+                  <a href="{{ url_for('main.character_detail', character_id=row.character_id) }}">{{ row.character.name }}</a>
+                {% elif row.merchandise %}
+                  <a href="{{ url_for('main.merchandise_detail', item_id=row.merchandise_id) }}">{{ row.merchandise.name }}</a>
+                {% elif row.event %}
+                  <a href="{{ url_for('main.events') }}#{{ row.event_id }}">{{ row.event.title }}</a>
+                {% else %}
+                  <span>Saved item</span>
+                {% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-line">No bookmarks{% if kind %} in this type{% endif %} yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel-card">
+      <header class="panel-head">
+        <h2>What you sent</h2>
+        <p>Pending pieces stay here until an admin publishes or returns them.</p>
+      </header>
+      {% if submissions %}
+        <ul class="desk-list">
+          {% for row in submissions %}
+            <li>
+              <div class="row-title">
+                <strong>{{ row.title }}</strong>
+                <span class="chip chip-{{ row.status }}">{{ row.status }}</span>
+              </div>
+              {% if row.status == 'rejected' and row.reject_reason %}<p>{{ row.reject_reason }}</p>{% endif %}
+              {% if row.status == 'rejected' %}
+                <p><a href="{{ url_for('account.submissions') }}">Revise and send it again</a></p>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-line">You have not sent a fan piece yet.</p>
+      {% endif %}
+    </section>
+  </div>
+</section>
+{% endblock %}

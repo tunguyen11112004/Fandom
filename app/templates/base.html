@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Fan Hub Plus{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,680&family=Outfit:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/style.css') }}?v=15"
+    />
+    <link
+      rel="icon"
+      href="{{ url_for('static', filename='favicon.svg') }}"
+      type="image/svg+xml"
+    />
+  </head>
+  <body class="{% block body_class %}{% endblock %} theme-{{ display.theme }} font-{{ display.font }}">
+    <svg class="liquid-defs" aria-hidden="true" focusable="false">
+      <filter id="liquid" x="-20%" y="-20%" width="140%" height="140%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.008 0.014" numOctaves="3" seed="4" result="noise">
+          <animate attributeName="baseFrequency" dur="11s" values="0.006 0.01;0.016 0.024;0.006 0.01" repeatCount="indefinite" />
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="58" xChannelSelector="R" yChannelSelector="G" result="warp" />
+        <feGaussianBlur in="warp" stdDeviation="12" />
+      </filter>
+    </svg>
+    <canvas id="fx-field" aria-hidden="true"></canvas>
+    <div class="cursor-spark" aria-hidden="true"></div>
+    <div class="speed-lines" aria-hidden="true"></div>
+    <div class="embers" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="shock" aria-hidden="true">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <polygon points="50,3 61,35 96,35 68,57 79,94 50,73 21,94 32,57 4,35 39,35" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="anime-bg" aria-hidden="true">
+      <video
+        id="wind"
+        muted
+        loop
+        playsinline
+        preload="auto"
+        poster="{{ url_for('static', filename='images/hero-blast.png') }}"
+      >
+        <source src="{{ url_for('static', filename='video/samurai-wind.mp4') }}?v=2" type="video/mp4" />
+      </video>
+    </div>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="header-bar">
+        <a class="mark" href="{{ url_for('main.home') }}">Fan Hub <em>Plus</em></a>
+        <nav class="site-nav" aria-label="Primary">
+          <a
+            href="{{ url_for('main.home') }}"
+            {% if request.endpoint == 'main.home' %}aria-current="page"{% endif %}
+            >Home</a
+          >
+          <a
+            href="{{ url_for('main.explore', category='anime') }}"
+            {% if request.args.get('category') == 'anime' %}aria-current="page"{% endif %}
+            >Anime</a
+          >
+          <a
+            href="{{ url_for('main.explore', category='manga') }}"
+            {% if request.args.get('category') == 'manga' %}aria-current="page"{% endif %}
+            >Manga</a
+          >
+          <a
+            href="{{ url_for('main.explore') }}"
+            {% if request.endpoint in ['main.explore', 'main.content_detail'] and not request.args.get('category') %}aria-current="page"{% endif %}
+            >Explore</a
+          >
+          <a
+            href="{{ url_for('main.news') }}"
+            {% if request.endpoint == 'main.news' %}aria-current="page"{% endif %}
+            >News</a
+          >
+          <a
+            href="{{ url_for('main.characters') }}"
+            {% if request.endpoint in ['main.characters', 'main.character_detail'] %}aria-current="page"{% endif %}
+            >Characters</a
+          >
+          <a
+            href="{{ url_for('main.merchandise') }}"
+            {% if request.endpoint in ['main.merchandise', 'main.merchandise_detail', 'main.upcoming'] %}aria-current="page"{% endif %}
+            >Merch</a
+          >
+          <a
+            href="{{ url_for('main.events') }}"
+            {% if request.endpoint == 'main.events' %}aria-current="page"{% endif %}
+            >Events</a
+          >
+          {% if current_user %}
+          <a href="{{ url_for('account.dashboard') if current_user.is_member else url_for('account.admin_home') }}">{{ current_user.name.split(' ')[0] if current_user.is_member else 'Admin' }}</a>
+          <form class="account-nav" method="post" action="{{ url_for('account.logout') }}">
+            <button type="submit">Log out</button>
+          </form>
+          {% else %}
+          <a href="{{ url_for('account.login') }}">Sign in</a>
+          {% endif %}
+        </nav>
+      </div>
+    </header>
+    <main id="main">{% block content %}{% endblock %}</main>
+    <footer class="site-footer">
+      <div class="footer-grid">
+        <section class="footer-col footer-brand">
+          <div class="footer-copy">
+            <p>A fandom desk for eight worlds. Guests browse the shelves, members keep a profile, and merchandise stays on display.</p>
+            <p class="footer-address">800 Wilshire Blvd, Suite 1200<br />Los Angeles, CA 90017</p>
+          </div>
+          <nav class="site-nav footer-nav footer-actions" aria-label="Contact">
+            <a href="mailto:hello@fanhub.plus">hello@fanhub.plus</a>
+            <a href="tel:+12135550198">213 555 0198</a>
+          </nav>
+        </section>
+        <section class="footer-col">
+          <nav class="site-nav footer-nav footer-links" aria-label="Useful links">
+            <a href="{{ url_for('main.explore') }}">Explore</a>
+            <a href="{{ url_for('main.news') }}">News</a>
+            <a href="{{ url_for('main.events') }}">Events</a>
+            <a href="{{ url_for('main.sitemap') }}">Sitemap</a>
+            <a href="{{ url_for('account.register') }}">Register</a>
+            <a href="{{ url_for('account.login') }}">Sign in</a>
+            <button class="footer-chat" type="button">Support</button>
+            <span class="footer-gap" aria-hidden="true"></span>
+            {% for category in nav_categories %}
+              <a href="{{ url_for('main.explore', category=category.slug) }}">{{ category.name }}</a>
+            {% endfor %}
+          </nav>
+        </section>
+        <section class="footer-col">
+          <div class="footer-map">
+            <iframe
+              title="Google Map of 800 Wilshire Blvd, Suite 1200, Los Angeles"
+              src="https://maps.google.com/maps?q=800%20Wilshire%20Blvd%20Suite%201200%2C%20Los%20Angeles%2C%20CA%2090017&amp;z=17&amp;output=embed"
+              loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade"
+            ></iframe>
+          </div>
+          <nav class="site-nav footer-nav footer-actions" aria-label="Meetup map">
+            <a href="https://www.google.com/maps/search/?api=1&amp;query=800+Wilshire+Blvd+Suite+1200+Los+Angeles+CA+90017" target="_blank" rel="noreferrer">Open in Google Maps</a>
+            <a href="{{ url_for('main.events') }}">Meetup cities</a>
+          </nav>
+        </section>
+        <section class="footer-col">
+          <div class="footer-gallery">
+            <a href="{{ url_for('main.content_detail', slug='attack-on-titan') }}"><img src="{{ url_for('static', filename='images/catalog/attack-on-titan.jpg') }}" alt="Attack on Titan" /></a>
+            <a href="{{ url_for('main.content_detail', slug='arcane') }}"><img src="{{ url_for('static', filename='images/catalog/arcane.jpg') }}" alt="Arcane" /></a>
+            <a href="{{ url_for('main.content_detail', slug='jujutsu-kaisen') }}"><img src="{{ url_for('static', filename='images/catalog/jujutsu-kaisen.jpg') }}" alt="Jujutsu Kaisen" /></a>
+            <a href="{{ url_for('main.content_detail', slug='spirited-away') }}"><img src="{{ url_for('static', filename='images/catalog/spirited-away.jpg') }}" alt="Spirited Away" /></a>
+            <a href="{{ url_for('main.content_detail', slug='one-piece') }}"><img src="{{ url_for('static', filename='images/catalog/one-piece.jpg') }}" alt="One Piece" /></a>
+            <a href="{{ url_for('main.events') }}"><img src="{{ url_for('static', filename='images/catalog/anime-expo.jpg') }}" alt="Anime Expo" /></a>
+          </div>
+          <nav class="site-nav footer-nav footer-actions" aria-label="Gallery">
+            <a href="{{ url_for('main.explore') }}">View more</a>
+          </nav>
+        </section>
+      </div>
+    </footer>
+    <button class="support-toggle" type="button" aria-label="Support" aria-expanded="false" aria-controls="support-panel">
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M16 28c0-12 7-20 16-20s16 8 16 20v14c-2 10-8 14-16 14s-14-4-16-14z" fill="#4a2048" />
+        <path d="M14 36c2 10 6 16 10 18-4-6-6-12-6-18h-4zm36 0c-2 10-6 16-10 18 4-6 6-12 6-18h4z" fill="#3a1638" />
+        <ellipse cx="32" cy="34" rx="13" ry="14" fill="#f7cbb8" />
+        <path d="M19 30c2-10 7-16 13-16s11 6 13 16c-3-4-7-6-13-6s-10 2-13 6z" fill="#5a2756" />
+        <path d="M20 31c-1 6 0 12 3 16" fill="none" stroke="#5a2756" stroke-width="3" stroke-linecap="round" />
+        <path d="M44 31c1 6 0 12-3 16" fill="none" stroke="#5a2756" stroke-width="3" stroke-linecap="round" />
+        <ellipse cx="26" cy="35" rx="2.6" ry="3.4" fill="#241018" />
+        <ellipse cx="38" cy="35" rx="2.6" ry="3.4" fill="#241018" />
+        <circle cx="25.1" cy="33.8" r="0.9" fill="#fff" />
+        <circle cx="37.1" cy="33.8" r="0.9" fill="#fff" />
+        <ellipse cx="21.5" cy="40" rx="2.4" ry="1.2" fill="#ee8b9c" />
+        <ellipse cx="42.5" cy="40" rx="2.4" ry="1.2" fill="#ee8b9c" />
+        <path d="M29 43.2c1.1 1.4 4.8 1.4 6 0" fill="none" stroke="#c45368" stroke-width="1.2" stroke-linecap="round" />
+        <path d="M17 30c0-10 6.5-16 15-16s15 6 15 16" fill="none" stroke="#f2c14e" stroke-width="1.7" stroke-linecap="round" />
+      </svg>
+    </button>
+    <section class="support-panel" id="support-panel" hidden>
+      <header class="support-head">
+        <div>
+          <p class="kicker">Usually replies in a moment</p>
+          <h2>Mina</h2>
+        </div>
+        <button class="support-close" type="button">Close</button>
+      </header>
+      <div class="support-log" aria-live="polite"></div>
+      <div class="support-prompts">
+        <button type="button" data-prompt="Show me around">Show me around</button>
+        <button type="button" data-prompt="How do I search?">How do I search?</button>
+        <button type="button" data-prompt="What's new in anime?">Anime news</button>
+      </div>
+      <form class="support-form">
+        <label class="sr-only" for="support-q">Message support</label>
+        <input id="support-q" name="message" type="text" maxlength="500" placeholder="Message Mina" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+    <script src="{{ url_for('static', filename='js/support.js') }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+    <script type="module" src="{{ url_for('static', filename='js/fx.js') }}"></script>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

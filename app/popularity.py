@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.models import Bookmark, Content, ContentRating
 
-# BR-09 — công thức trùng fn_popularity_score trong dump SQL:
-# views + 5 * số đánh giá + round(avg * 10) + 3 * số bookmark
+# BR-09 — same formula as fn_popularity_score in the SQL dump:
+# views + 5 * rating_count + round(avg * 10) + 3 * bookmark_count
 
 
 def refresh_content_popularity(db: Session, content_id: int | None) -> None:

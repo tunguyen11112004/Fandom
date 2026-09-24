@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}Admin · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-movies auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel console">
+  <div class="console-shell">
+  <aside class="console-side">
+    <p class="kicker">Admin desk</p>
+    <h1>Control panel</h1>
+    <p class="side-note">Signed in as {{ user.name }}.</p>
+    <nav aria-label="Admin sections">
+      <a href="{{ url_for('account.admin_home', tab='queue') }}" {% if tab == 'queue' %}aria-current="page"{% endif %}>Queue <span>{{ queue|length }}</span></a>
+      <a href="{{ url_for('account.admin_home', tab='feedback') }}" {% if tab == 'feedback' %}aria-current="page"{% endif %}>Feedback <span>{{ open_feedback }}</span></a>
+      <a href="{{ url_for('account.admin_home', tab='health', days=days) }}" {% if tab == 'health' %}aria-current="page"{% endif %}>Health</a>
+      <a href="{{ url_for('account.admin_home', tab='content') }}" {% if tab == 'content' %}aria-current="page"{% endif %}>Catalog</a>
+      <a href="{{ url_for('account.admin_home', tab='categories') }}" {% if tab == 'categories' %}aria-current="page"{% endif %}>Categories</a>
+      <a href="{{ url_for('account.admin_home', tab='users') }}" {% if tab == 'users' %}aria-current="page"{% endif %}>Members</a>
+      <a href="{{ url_for('account.admin_home', tab='record') }}" {% if tab == 'record' %}aria-current="page"{% endif %}>Record</a>
+    </nav>
+  </aside>
+  <div class="console-main">
+
+  {% if tab == 'queue' %}
+  <section id="queue" class="console-block">
+    <header class="panel-head">
+      <p class="step">01</p>
+      <div>
+        <h2>Needs a decision</h2>
+        <p>{{ queue|length }} fan piece{{ '' if queue|length == 1 else 's' }} waiting · {{ open_feedback }} feedback item{{ '' if open_feedback == 1 else 's' }} still open.</p>
+      </div>
+    </header>
+    <div class="desk-grid">
+      <div class="panel-card">
+        <h3>Fan queue</h3>
+        {% for row in queue %}
+          <article class="work-item">
+            <div class="row-title">
+              <strong>{{ row.title }}</strong>
+              <span class="chip chip-pending">Pending</span>
+            </div>
+            <p>{{ row.author.name }} · {{ row.category.name }} · {{ row.content_type }}</p>
+            <p class="work-body">{{ row.body }}</p>
+            {% if row.media_url %}<p><a href="{{ row.media_url }}">Attached link</a></p>{% endif %}
+            <div class="decision-row">
+              <form method="post" action="{{ url_for('account.admin_submission', submission_id=row.id) }}">
+                <button type="submit" name="decision" value="approve">Publish</button>
+              </form>
+              <form method="post" action="{{ url_for('account.admin_submission', submission_id=row.id) }}" class="inline-note">
+                <input id="reason-{{ row.id }}" name="reason" placeholder="What should they change?" aria-label="Reason for {{ row.title }}" />
+                <button class="quiet" type="submit" name="decision" value="reject">Send back</button>
+              </form>
+            </div>
+          </article>
+        {% else %}
+          <p class="empty-line">The queue is clear.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if tab == 'feedback' %}
+  <section id="feedback" class="console-block">
+    <header class="panel-head">
+      <div>
+        <h2>Feedback</h2>
+        <p>{{ open_feedback }} item{{ '' if open_feedback == 1 else 's' }} still open.</p>
+      </div>
+    </header>
+    <div class="panel-card">
+        <form method="get" class="filter-line">
+          <input type="hidden" name="tab" value="feedback" />
+          <input type="hidden" name="days" value="{{ days }}" />
+          {% if query %}<input type="hidden" name="q" value="{{ query }}" />{% endif %}
+          <label class="sr-only" for="kind">Type</label>
+          <select id="kind" name="kind">
+            <option value="">All types</option>
+            <option value="bug" {% if kinds == 'bug' %}selected{% endif %}>Bug</option>
+            <option value="suggestion" {% if kinds == 'suggestion' %}selected{% endif %}>Suggestion</option>
+            <option value="query" {% if kinds == 'query' %}selected{% endif %}>Question</option>
+          </select>
+          <label class="sr-only" for="status">State</label>
+          <select id="status" name="status">
+            <option value="">All states</option>
+            <option value="new" {% if states == 'new' %}selected{% endif %}>New</option>
+            <option value="reviewing" {% if states == 'reviewing' %}selected{% endif %}>Reviewing</option>
+            <option value="done" {% if states == 'done' %}selected{% endif %}>Done</option>
+          </select>
+          <button type="submit">Filter</button>
+        </form>
+        {% for row in feedback_rows %}
+          <article class="work-item">
+            <div class="row-title">
+              <strong>{{ row.kind }}</strong>
+              <span class="chip chip-{{ row.status }}">{{ row.status }}</span>
+            </div>
+            <p>{{ row.email }}</p>
+            <p class="work-body">{{ row.message }}</p>
+            {% if row.page_url %}<p>Page: {{ row.page_url }}</p>{% endif %}
+            {% if row.steps %}<p>Steps: {{ row.steps }}</p>{% endif %}
+            <form method="post" action="{{ url_for('account.admin_feedback', feedback_id=row.id) }}" class="inline-note">
+              <select name="status" aria-label="Status for feedback {{ row.id }}">
+                <option value="new" {% if row.status == 'new' %}selected{% endif %}>New</option>
+                <option value="reviewing" {% if row.status == 'reviewing' %}selected{% endif %}>Reviewing</option>
+                <option value="done" {% if row.status == 'done' %}selected{% endif %}>Done</option>
+              </select>
+              <input name="admin_note" value="{{ row.admin_note }}" placeholder="Desk note" aria-label="Note for feedback {{ row.id }}" />
+              <button type="submit">Update</button>
+            </form>
+            <form method="post" action="{{ url_for('account.admin_feedback', feedback_id=row.id) }}">
+              <button class="quiet" type="submit" name="action" value="delete">Delete</button>
+            </form>
+          </article>
+        {% else %}
+          <p class="empty-line">No feedback in this filter.</p>
+        {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if tab == 'health' %}
+  <section id="health" class="console-block">
+    <header class="panel-head">
+      <p class="step">02</p>
+      <div>
+        <h2>How the hub is doing</h2>
+        <p>Active means a member signed in during the window.</p>
+      </div>
+    </header>
+    <nav class="chip-row" aria-label="Time window">
+      <a href="{{ url_for('account.admin_home', tab='health', days='7') }}" {% if days == '7' %}aria-current="true"{% endif %}>7 days</a>
+      <a href="{{ url_for('account.admin_home', tab='health', days='30') }}" {% if days == '30' %}aria-current="true"{% endif %}>30 days</a>
+      <a href="{{ url_for('account.admin_home', tab='health', days='all') }}" {% if days == 'all' %}aria-current="true"{% endif %}>All time</a>
+    </nav>
+    <ul class="kpi-row">
+      <li><span>Active members</span><strong>{{ active_users }}</strong></li>
+      <li><span>Members</span><strong>{{ member_count }}</strong></li>
+      <li><span>Chat turns</span><strong>{{ chat_count }}</strong></li>
+      <li><span>Titles</span><strong>{{ title_count }}</strong></li>
+    </ul>
+    <ul class="mix">
+      {% for name, count in popular %}
+        <li>
+          <span>{{ name }}</span>
+          <strong>{{ count }}</strong>
+          <i style="--share: {{ (count / title_count * 100) if title_count else 0 }}%"></i>
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if tab == 'content' %}
+  <section id="content" class="console-block">
+    <header class="panel-head">
+      <p class="step">03</p>
+      <div>
+        <h2>Catalog</h2>
+        <p>Articles, media, character notes, merchandise, and upcoming releases. Hidden titles stay off Explore.</p>
+      </div>
+    </header>
+    <details class="add-drawer">
+      <summary>Add a title</summary>
+      <form method="post" action="{{ url_for('account.admin_content_create') }}" class="desk-form form-grid">
+        <label for="new-title">Title<input id="new-title" name="title" required /></label>
+        <label for="new-category">Category
+          <select id="new-category" name="category_id">
+            {% for category in categories %}
+              <option value="{{ category.id }}">{{ category.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label for="new-type">Type
+          <select id="new-type" name="content_type">
+            <option value="article">Article</option>
+            <option value="video">Video</option>
+            <option value="audio">Audio</option>
+            <option value="profile">Character profile</option>
+            <option value="merch">Merchandise</option>
+            <option value="release">Upcoming release</option>
+          </select>
+        </label>
+        <label for="new-genre">Genre<input id="new-genre" name="genre" required /></label>
+        <label for="new-year">Year<input id="new-year" name="release_year" required inputmode="numeric" /></label>
+        <label for="new-tags">Tags<input id="new-tags" name="tags" placeholder="Limited Edition, Collectible" /></label>
+        <label class="span-2" for="new-summary">Summary<textarea id="new-summary" name="summary" rows="2" required></textarea></label>
+        <label class="span-2" for="new-body">Body<textarea id="new-body" name="body" rows="4" required></textarea></label>
+        <label class="span-2" for="new-embed">Embed link<input id="new-embed" name="embed_url" type="url" /></label>
+        <label class="check"><input type="checkbox" name="published" value="yes" checked /> Published</label>
+        <label class="check"><input type="checkbox" name="featured" value="yes" /> Featured</label>
+        <button type="submit">Add to the catalog</button>
+      </form>
+    </details>
+    <div class="table-wrap">
+      <table class="catalog">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Shelf</th>
+            <th>Type</th>
+            <th>Views</th>
+            <th>State</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in titles %}
+            <tr>
+              <td>
+                <strong>{{ item.title }}</strong>
+                {% if item.featured %}<span class="chip">Featured</span>{% endif %}
+              </td>
+              <td>{{ item.category.name }}</td>
+              <td>{{ item.content_type }}</td>
+              <td>{{ item.view_count }}</td>
+              <td><span class="chip {{ 'chip-done' if item.published else 'chip-warn' }}">{{ 'Live' if item.published else 'Hidden' }}</span></td>
+              <td>
+                <details>
+                  <summary>Edit</summary>
+                  <form method="post" action="{{ url_for('account.admin_content_update', item_id=item.id) }}" class="desk-form">
+                    <input name="title" value="{{ item.title }}" required aria-label="Title" />
+                    <select name="category_id" aria-label="Category">
+                      {% for category in categories %}
+                        <option value="{{ category.id }}" {% if category.id == item.category_id %}selected{% endif %}>{{ category.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <select name="content_type" aria-label="Type">
+                      {% for kind in ['article', 'video', 'audio', 'profile', 'merch', 'release'] %}
+                        <option value="{{ kind }}" {% if item.content_type == kind %}selected{% endif %}>{{ kind }}</option>
+                      {% endfor %}
+                    </select>
+                    <input name="genre" value="{{ item.genre }}" required aria-label="Genre" />
+                    <input name="release_year" value="{{ item.release_year }}" required aria-label="Year" />
+                    <textarea name="summary" rows="2" required aria-label="Summary">{{ item.summary }}</textarea>
+                    <textarea name="body" rows="3" required aria-label="Body">{{ item.body }}</textarea>
+                    <input name="embed_url" value="{{ item.embed_url }}" placeholder="Embed link" aria-label="Embed link" />
+                    <input name="tags" value="{{ item.tags }}" placeholder="Tags" aria-label="Tags" />
+                    <input name="popularity_score" value="{{ item.popularity_score }}" aria-label="Popularity" />
+                    <label class="check"><input type="checkbox" name="published" value="yes" {% if item.published %}checked{% endif %} /> Published</label>
+                    <label class="check"><input type="checkbox" name="featured" value="yes" {% if item.featured %}checked{% endif %} /> Featured</label>
+                    <button type="submit">Save</button>
+                  </form>
+                  <form method="post" action="{{ url_for('account.admin_content_update', item_id=item.id) }}">
+                    <button class="quiet" type="submit" name="action" value="hide">Hide</button>
+                  </form>
+                </details>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if tab == 'categories' %}
+  <section id="categories" class="console-block">
+    <header class="panel-head">
+      <p class="step">04</p>
+      <div>
+        <h2>Categories</h2>
+        <p>The eight shelves stay fixed. You can rewrite the line visitors read on each one.</p>
+      </div>
+    </header>
+    <div class="category-edit">
+      {% for category in categories %}
+        <form method="post" action="{{ url_for('account.admin_category', category_id=category.id) }}" class="panel-card">
+          <label for="cat-{{ category.id }}">{{ category.name }}</label>
+          <textarea id="cat-{{ category.id }}" name="description" rows="3">{{ category.description }}</textarea>
+          <button type="submit">Save</button>
+        </form>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if tab == 'users' %}
+  <section id="users" class="console-block">
+    <header class="panel-head">
+      <p class="step">05</p>
+      <div>
+        <h2>Members</h2>
+        <p>Locking an account signs that person out on their next page.</p>
+      </div>
+    </header>
+    <form method="get" class="filter-line">
+      <input type="hidden" name="tab" value="users" />
+      <input type="hidden" name="days" value="{{ days }}" />
+      <label class="sr-only" for="q">Search members</label>
+      <input id="q" name="q" value="{{ query }}" placeholder="Name or email" />
+      <button type="submit">Search</button>
+    </form>
+    <div class="table-wrap">
+      <table class="catalog">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Sent</th>
+            <th>State</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for member in members %}
+            <tr>
+              <td><strong>{{ member.name }}</strong></td>
+              <td>{{ member.email }}</td>
+              <td>{{ submission_counts.get(member.id, 0) }}</td>
+              <td><span class="chip {{ 'chip-warn' if member.locked else 'chip-done' }}">{{ 'Locked' if member.locked else 'Open' }}</span></td>
+              <td>
+                <form method="post" action="{{ url_for('account.admin_user', user_id=member.id) }}">
+                  <button class="quiet" type="submit" name="locked" value="{{ 'no' if member.locked else 'yes' }}">{{ 'Unlock' if member.locked else 'Lock' }}</button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">No members match that search.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if tab == 'record' %}
+  <section id="record" class="console-block">
+    <header class="panel-head">
+      <p class="step">06</p>
+      <div>
+        <h2>Record</h2>
+        <p>The latest actions taken from this desk.</p>
+      </div>
+    </header>
+    <ol class="timeline">
+      {% for row in logs %}
+        <li>
+          <span class="chip">{{ row.action }}</span>
+          {{ row.detail }}
+        </li>
+      {% else %}
+        <li>No admin actions yet.</li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
+  </div>
+  </div>
+</section>
+{% endblock %}

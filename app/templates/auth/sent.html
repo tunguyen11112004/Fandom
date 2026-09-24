@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Check your inbox · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-k-pop auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  {% if purpose == "verify" %}
+  <h1>Verify your email</h1>
+  <p>This demo has no outside mail server, so the one-time link is here. It lasts 24 hours.</p>
+  {% elif purpose == "reset" %}
+  <h1>If that email exists, a link is ready</h1>
+  <p>Reset links last 30 minutes and work once.</p>
+  {% else %}
+  <h1>That link is no longer valid</h1>
+  <p>Ask for a new one from register or forgot password.</p>
+  {% endif %}
+  {% if link %}<p class="auth-links"><a href="{{ link }}">Open the link</a></p>{% endif %}
+</section>
+{% endblock %}

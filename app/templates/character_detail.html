@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ item.name }} · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-anime{% endblock %}
+{% block content %}
+    <header class="page-head">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('main.home') }}">Home</a>
+      <span aria-hidden="true">/</span>
+      <a href="{{ url_for('main.characters') }}">Characters</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">{{ item.name }}</span>
+    </nav>
+    <p class="kicker">{% if fandom %}{{ fandom.name }}{% elif category %}{{ category.name }}{% endif %}</p>
+    <h1>{{ item.name }}</h1>
+    {% if item.alias %}<p class="lede">Also known as {{ item.alias }}</p>{% endif %}
+    </header>
+  <article class="detail">
+    <p>{{ item.bio }}</p>
+    <form class="bookmark-bar" method="post" action="{{ url_for('account.bookmark_character', character_id=item.character_id) }}">
+      {% if current_user and current_user.is_member %}
+        <label for="note">Note</label>
+        <input id="note" name="note" maxlength="280" value="{{ saved.note if saved else '' }}" />
+        <button type="submit" name="action" value="save">{{ 'Update bookmark' if saved else 'Bookmark' }}</button>
+        {% if saved %}<button type="submit" name="action" value="remove">Remove</button>{% endif %}
+      {% else %}
+        <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a>
+      {% endif %}
+    </form>
+  </article>
+  {% if related %}
+    <section class="section">
+      <div class="section-head"><h2>Related titles</h2></div>
+      <ul class="card-grid compact">
+        {% for other in related %}
+          <li>
+            <a class="content-card" href="{{ url_for('main.content_detail', slug=other.slug) }}">
+              <div class="card-copy">
+                <span class="type">{{ other.content_type }}</span>
+                <h3>{{ other.title }}</h3>
+              </div>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+{% endblock %}

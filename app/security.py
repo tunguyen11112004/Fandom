@@ -16,7 +16,16 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    if not hashed:
+        return False
+    if hashed.startswith("$2"):
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    try:
+        from werkzeug.security import check_password_hash
+
+        return check_password_hash(hashed, plain)
+    except Exception:
+        return False
 
 
 def password_is_strong(plain: str) -> bool:

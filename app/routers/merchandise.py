@@ -61,7 +61,7 @@ def get_merch(item_id: int):
     db = get_db()
     row = db.get(MerchandiseItem, item_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy merchandise.")
+        raise AuthError(404, "not_found", "Merchandise not found.")
     row.view_count = (row.view_count or 0) + 1
     user = get_optional_user()
     log_activity(db, user.user_id if user else None, "view", "merchandise", item_id)
@@ -76,7 +76,7 @@ def admin_create_merch():
     db = get_db()
     body = parse_body(MerchandiseIn)
     if db.get(Category, body.category_id) is None:
-        raise AuthError(400, "not_found", "Category không tồn tại.")
+        raise AuthError(400, "not_found", "Category not found.")
     data = body.model_dump(exclude={"tag_ids", "images"})
     row = MerchandiseItem(**data)
     db.add(row)
@@ -93,7 +93,7 @@ def admin_update_merch(item_id: int):
     db = get_db()
     row = db.get(MerchandiseItem, item_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy merchandise.")
+        raise AuthError(404, "not_found", "Merchandise not found.")
     body = parse_body(MerchandiseIn)
     for k, v in body.model_dump(exclude={"tag_ids", "images"}).items():
         setattr(row, k, v)
@@ -109,8 +109,8 @@ def admin_delete_merch(item_id: int):
     db = get_db()
     row = db.get(MerchandiseItem, item_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy merchandise.")
+        raise AuthError(404, "not_found", "Merchandise not found.")
     log_activity(db, admin.user_id, "merchandise_delete", "merchandise", item_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã xóa merchandise.")
+    return ok(message="Merchandise deleted.")

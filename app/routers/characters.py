@@ -37,7 +37,7 @@ def get_character(character_id: int):
     db = get_db()
     row = db.get(CharacterProfile, character_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy nhân vật.")
+        raise AuthError(404, "not_found", "Character not found.")
     row.view_count = (row.view_count or 0) + 1
     user = get_optional_user()
     log_activity(db, user.user_id if user else None, "view", "character", character_id)
@@ -69,7 +69,7 @@ def admin_create_character():
     db = get_db()
     body = parse_body(CharacterIn)
     if db.get(Category, body.category_id) is None:
-        raise AuthError(400, "not_found", "Category không tồn tại.")
+        raise AuthError(400, "not_found", "Category not found.")
     row = CharacterProfile(**body.model_dump())
     db.add(row)
     db.flush()
@@ -84,7 +84,7 @@ def admin_update_character(character_id: int):
     db = get_db()
     row = db.get(CharacterProfile, character_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy nhân vật.")
+        raise AuthError(404, "not_found", "Character not found.")
     body = parse_body(CharacterIn)
     for k, v in body.model_dump().items():
         setattr(row, k, v)
@@ -99,8 +99,8 @@ def admin_delete_character(character_id: int):
     db = get_db()
     row = db.get(CharacterProfile, character_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy nhân vật.")
+        raise AuthError(404, "not_found", "Character not found.")
     log_activity(db, admin.user_id, "character_delete", "character", character_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã xóa nhân vật.")
+    return ok(message="Character deleted.")

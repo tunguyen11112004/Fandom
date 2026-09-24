@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Profile · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-tv-shows auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <p class="kicker">Profile</p>
+  <h1>{{ user.name }}</h1>
+  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+  {% if user.avatar_path %}
+    <img class="avatar" src="{{ url_for('static', filename=user.avatar_path) }}" alt="" />
+  {% endif %}
+  <form method="post" enctype="multipart/form-data" class="profile-form">
+    <label for="name">Name
+      <input id="name" name="name" value="{{ user.name }}" required />
+    </label>
+    <label for="favorite">Short favorite line
+      <input id="favorite" name="favorite" value="{{ user.favorite }}" placeholder="One Piece, Arcane, BTS…" />
+    </label>
+    <fieldset class="span-2">
+      <legend>Favorite fandoms</legend>
+      <div class="pick-grid">
+        {% for fan in fandoms %}
+          <label class="check">
+            <input type="checkbox" name="fandoms" value="{{ fan.fandom_id }}" {% if fan.fandom_id in chosen_fandoms %}checked{% endif %} />
+            {{ fan.name }}
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <fieldset class="span-2">
+      <legend>Categories you care about</legend>
+      <div class="pick-grid">
+        {% for category in categories %}
+          <label class="check">
+            <input type="checkbox" name="interests" value="{{ category.slug }}" {% if category.slug in chosen %}checked{% endif %} />
+            {{ category.name }}
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label for="theme">Display
+      <select id="theme" name="theme">
+        <option value="dark" {% if user.theme != 'light' %}selected{% endif %}>Dark</option>
+        <option value="light" {% if user.theme == 'light' %}selected{% endif %}>Light</option>
+      </select>
+    </label>
+    <label for="font">Type size
+      <select id="font" name="font">
+        <option value="small" {% if user.font_size == 'small' %}selected{% endif %}>Small</option>
+        <option value="medium" {% if user.font_size != 'small' and user.font_size != 'large' %}selected{% endif %}>Medium</option>
+        <option value="large" {% if user.font_size == 'large' %}selected{% endif %}>Large</option>
+      </select>
+    </label>
+    <label class="span-2" for="avatar">Avatar, optional
+      <input id="avatar" name="avatar" type="file" accept="image/png,image/jpeg,image/webp" />
+    </label>
+    <button type="submit">Save</button>
+  </form>
+  <p class="auth-links"><a href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
+</section>
+{% endblock %}

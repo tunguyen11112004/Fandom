@@ -3,10 +3,10 @@ from datetime import date, datetime
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.database import Base
+from app.extensions import db
 
 
-class User(Base):
+class User(db.Model):
     __tablename__ = "users"
 
     user_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -29,8 +29,59 @@ class User(Base):
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     activity_logs: Mapped[list["ActivityLog"]] = relationship(back_populates="user")
 
+    @property
+    def id(self):
+        return self.user_id
 
-class UserToken(Base):
+    @property
+    def is_member(self):
+        return self.role == "user"
+
+    @property
+    def locked(self):
+        return not self.is_active
+
+    @locked.setter
+    def locked(self, value):
+        self.is_active = not bool(value)
+
+    @property
+    def verified(self):
+        return self.email_verified_at is not None
+
+    @verified.setter
+    def verified(self, value):
+        from app.security import utcnow
+
+        self.email_verified_at = utcnow() if value else None
+
+    @property
+    def last_seen(self):
+        return self.last_login_at
+
+    @last_seen.setter
+    def last_seen(self, value):
+        self.last_login_at = value
+
+    @property
+    def favorite(self):
+        return self.bio or ""
+
+    @favorite.setter
+    def favorite(self, value):
+        self.bio = (value or "")[:500] or None
+
+    @property
+    def avatar_path(self):
+        url = self.avatar_url or ""
+        return url[8:] if url.startswith("/static/") else url
+
+    @avatar_path.setter
+    def avatar_path(self, value):
+        self.avatar_url = value
+
+
+class UserToken(db.Model):
     __tablename__ = "user_tokens"
 
     token_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -43,7 +94,7 @@ class UserToken(Base):
     user: Mapped[User] = relationship(back_populates="tokens")
 
 
-class UserSession(Base):
+class UserSession(db.Model):
     __tablename__ = "user_sessions"
 
     session_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -55,7 +106,7 @@ class UserSession(Base):
     user: Mapped[User] = relationship(back_populates="sessions")
 
 
-class ActivityLog(Base):
+class ActivityLog(db.Model):
     __tablename__ = "activity_logs"
 
     log_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -67,8 +118,28 @@ class ActivityLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     user: Mapped[User | None] = relationship(back_populates="activity_logs")
 
+    @property
+    def id(self):
+        return self.log_id
 
-class Category(Base):
+    @property
+    def kind(self):
+        return self.action
+
+    @property
+    def summary(self):
+        return self.details or ""
+
+    @property
+    def detail(self):
+        return self.details or ""
+
+    @property
+    def href(self):
+        return ""
+
+
+class Category(db.Model):
     __tablename__ = "categories"
 
     category_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -76,9 +147,26 @@ class Category(Base):
     slug: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    contents: Mapped[list["Content"]] = relationship(back_populates="category")
+
+    @property
+    def id(self):
+        return self.category_id
+
+    @property
+    def image_path(self):
+        from app.media import category_file
+
+        return category_file(self.slug)
+
+    @property
+    def image_credit(self):
+        from app.media import category_credit
+
+        return category_credit(self.slug)
 
 
-class Fandom(Base):
+class Fandom(db.Model):
     __tablename__ = "fandoms"
 
     fandom_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -91,31 +179,31 @@ class Fandom(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
-class UserCategory(Base):
+class UserCategory(db.Model):
     __tablename__ = "user_categories"
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.category_id", ondelete="CASCADE"), primary_key=True)
 
 
-class UserFandom(Base):
+class UserFandom(db.Model):
     __tablename__ = "user_fandoms"
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
     fandom_id: Mapped[int] = mapped_column(ForeignKey("fandoms.fandom_id", ondelete="CASCADE"), primary_key=True)
 
 
-class Genre(Base):
+class Genre(db.Model):
     __tablename__ = "genres"
     genre_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
 
 
-class Tag(Base):
+class Tag(db.Model):
     __tablename__ = "tags"
     tag_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
 
 
-class Content(Base):
+class Content(db.Model):
     __tablename__ = "contents"
 
     content_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -146,21 +234,86 @@ class Content(Base):
 
     images: Mapped[list["ContentImage"]] = relationship(cascade="all, delete-orphan")
     timeline: Mapped[list["ContentTimelineEntry"]] = relationship(cascade="all, delete-orphan")
+    category: Mapped["Category"] = relationship(back_populates="contents")
+    genre_links: Mapped[list["ContentGenre"]] = relationship(cascade="all, delete-orphan")
+
+    @property
+    def id(self):
+        return self.content_id
+
+    @property
+    def content_type(self):
+        return self.type
+
+    @content_type.setter
+    def content_type(self, value):
+        allowed = {"article", "video", "audio", "image", "trailer", "explainer"}
+        self.type = value if value in allowed else "article"
+
+    @property
+    def published(self):
+        return self.status == "published"
+
+    @published.setter
+    def published(self, value):
+        self.status = "published" if value else "archived"
+
+    @property
+    def featured(self):
+        return self.is_featured
+
+    @featured.setter
+    def featured(self, value):
+        self.is_featured = bool(value)
+
+    @property
+    def release_year(self):
+        return self.release_date.year if self.release_date else None
+
+    @release_year.setter
+    def release_year(self, value):
+        self.release_date = date(int(value), 1, 1)
+
+    @property
+    def genre(self):
+        names = [link.genre.name for link in self.genre_links if getattr(link, "genre", None)]
+        return names[0] if names else ""
+
+    @property
+    def image_path(self):
+        from app.media import content_file
+
+        return content_file(self.slug) or (self.thumbnail_url.split("/")[-1] if self.thumbnail_url else None)
+
+    @property
+    def image_credit(self):
+        from app.media import content_credit
+
+        return content_credit(self.slug)
+
+    @property
+    def tags(self):
+        return ""
+
+    @tags.setter
+    def tags(self, _value):
+        return None
 
 
-class ContentGenre(Base):
+class ContentGenre(db.Model):
     __tablename__ = "content_genres"
     content_id: Mapped[int] = mapped_column(ForeignKey("contents.content_id", ondelete="CASCADE"), primary_key=True)
     genre_id: Mapped[int] = mapped_column(ForeignKey("genres.genre_id", ondelete="CASCADE"), primary_key=True)
+    genre: Mapped["Genre"] = relationship()
 
 
-class ContentTag(Base):
+class ContentTag(db.Model):
     __tablename__ = "content_tags"
     content_id: Mapped[int] = mapped_column(ForeignKey("contents.content_id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.tag_id", ondelete="CASCADE"), primary_key=True)
 
 
-class ContentImage(Base):
+class ContentImage(db.Model):
     __tablename__ = "content_images"
     image_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content_id: Mapped[int] = mapped_column(ForeignKey("contents.content_id", ondelete="CASCADE"), nullable=False)
@@ -169,7 +322,7 @@ class ContentImage(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class ContentTimelineEntry(Base):
+class ContentTimelineEntry(db.Model):
     __tablename__ = "content_timeline_entries"
     entry_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content_id: Mapped[int] = mapped_column(ForeignKey("contents.content_id", ondelete="CASCADE"), nullable=False)
@@ -180,7 +333,7 @@ class ContentTimelineEntry(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class CharacterProfile(Base):
+class CharacterProfile(db.Model):
     __tablename__ = "character_profiles"
     character_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.category_id", ondelete="RESTRICT"), nullable=False)
@@ -194,7 +347,7 @@ class CharacterProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
-class MerchandiseItem(Base):
+class MerchandiseItem(db.Model):
     __tablename__ = "merchandise_items"
     item_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.category_id", ondelete="RESTRICT"), nullable=False)
@@ -211,13 +364,13 @@ class MerchandiseItem(Base):
     images: Mapped[list["MerchandiseImage"]] = relationship(cascade="all, delete-orphan")
 
 
-class MerchandiseTag(Base):
+class MerchandiseTag(db.Model):
     __tablename__ = "merchandise_tags"
     item_id: Mapped[int] = mapped_column(ForeignKey("merchandise_items.item_id", ondelete="CASCADE"), primary_key=True)
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.tag_id", ondelete="CASCADE"), primary_key=True)
 
 
-class MerchandiseImage(Base):
+class MerchandiseImage(db.Model):
     __tablename__ = "merchandise_images"
     image_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("merchandise_items.item_id", ondelete="CASCADE"), nullable=False)
@@ -226,7 +379,7 @@ class MerchandiseImage(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class Bookmark(Base):
+class Bookmark(db.Model):
     __tablename__ = "bookmarks"
     bookmark_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -238,9 +391,17 @@ class Bookmark(Base):
     share_token: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    content: Mapped["Content | None"] = relationship()
+    character: Mapped["CharacterProfile | None"] = relationship()
+    merchandise: Mapped["MerchandiseItem | None"] = relationship()
+    event: Mapped["Event | None"] = relationship()
+
+    @property
+    def id(self):
+        return self.bookmark_id
 
 
-class ContentRating(Base):
+class ContentRating(db.Model):
     __tablename__ = "content_ratings"
     __table_args__ = (UniqueConstraint("user_id", "content_id", name="uq_rating_user_content"),)
     rating_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -251,7 +412,7 @@ class ContentRating(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
-class ChatbotFaq(Base):
+class ChatbotFaq(db.Model):
     __tablename__ = "chatbot_faqs"
     faq_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True)
@@ -264,7 +425,7 @@ class ChatbotFaq(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
-class ChatSession(Base):
+class ChatSession(db.Model):
     __tablename__ = "chat_sessions"
     session_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
@@ -275,7 +436,7 @@ class ChatSession(Base):
     last_activity_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
-class ChatbotQuery(Base):
+class ChatbotQuery(db.Model):
     __tablename__ = "chatbot_queries"
     query_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("chat_sessions.session_id", ondelete="CASCADE"), nullable=False)
@@ -286,7 +447,7 @@ class ChatbotQuery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
-class Feedback(Base):
+class Feedback(db.Model):
     __tablename__ = "feedbacks"
     feedback_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
@@ -307,8 +468,32 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
+    @property
+    def id(self):
+        return self.feedback_id
 
-class Event(Base):
+    @property
+    def email(self):
+        return self.contact_email or ""
+
+    @property
+    def kind(self):
+        return self.type
+
+    @property
+    def steps(self):
+        return self.reproduction_steps or ""
+
+    @property
+    def admin_note(self):
+        return self.admin_response or ""
+
+    @admin_note.setter
+    def admin_note(self, value):
+        self.admin_response = value
+
+
+class Event(db.Model):
     __tablename__ = "events"
     event_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.category_id", ondelete="SET NULL"), nullable=True)
@@ -331,7 +516,7 @@ class Event(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
 
-class FanSubmission(Base):
+class FanSubmission(db.Model):
     __tablename__ = "fan_submissions"
     submission_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -350,9 +535,23 @@ class FanSubmission(Base):
     reject_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     published_content_id: Mapped[int | None] = mapped_column(ForeignKey("contents.content_id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    author: Mapped["User"] = relationship(foreign_keys=[user_id])
+    category: Mapped["Category"] = relationship()
+
+    @property
+    def id(self):
+        return self.submission_id
+
+    @property
+    def rights_ok(self):
+        return self.rights_confirmed
+
+    @rights_ok.setter
+    def rights_ok(self, value):
+        self.rights_confirmed = bool(value)
 
 
-class ModerationLog(Base):
+class ModerationLog(db.Model):
     __tablename__ = "moderation_logs"
     log_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     submission_id: Mapped[int] = mapped_column(ForeignKey("fan_submissions.submission_id", ondelete="CASCADE"), nullable=False)
@@ -362,7 +561,7 @@ class ModerationLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
-class Notification(Base):
+class Notification(db.Model):
     __tablename__ = "notifications"
     notification_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
@@ -372,7 +571,7 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
 
-class UserDashboardWidget(Base):
+class UserDashboardWidget(db.Model):
     __tablename__ = "user_dashboard_widgets"
     user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), primary_key=True)
     widget_key: Mapped[str] = mapped_column(String(30), primary_key=True)

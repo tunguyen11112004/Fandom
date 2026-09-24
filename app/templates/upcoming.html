@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Upcoming · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-gaming{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('main.home') }}">Home</a>
+      <span aria-hidden="true">/</span>
+      <a href="{{ url_for('main.merchandise') }}">Merchandise</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Upcoming</span>
+    </nav>
+    <h1>Coming up</h1>
+    <p>Dates for titles and display pieces still on the way. Sorted by release day.</p>
+  </header>
+  <section class="section">
+    <div class="section-head"><h2>Catalog</h2></div>
+    {% if contents %}
+      <ul class="desk-list">
+        {% for item in contents %}
+          <li>
+            <a href="{{ url_for('main.content_detail', slug=item.slug) }}">{{ item.title }}</a>
+            <span class="chip">{{ item.release_date }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty-line">No dated catalog titles after today.</p>
+    {% endif %}
+  </section>
+  <section class="section">
+    <div class="section-head"><h2>Merchandise drops</h2></div>
+    {% if merch %}
+      <ul class="desk-list">
+        {% for item in merch %}
+          <li>
+            <a href="{{ url_for('main.merchandise_detail', item_id=item.item_id) }}">{{ item.name }}</a>
+            <span class="chip">{{ item.release_date or 'TBA' }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty-line">No upcoming merchandise rows yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

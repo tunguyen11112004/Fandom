@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Merchandise · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-comics{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="{{ url_for('main.home') }}">Home</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">Merchandise</span>
+    </nav>
+    <h1>On display</h1>
+    <p>Showcase only. There is no cart and no payment. Tags such as Limited Edition come from the admin list.</p>
+  </header>
+  <form class="filters" method="get">
+    <div>
+      <label for="category">Category</label>
+      <select id="category" name="category">
+        <option value="">All categories</option>
+        {% for cat in categories %}
+          <option value="{{ cat.slug }}" {% if category == cat.slug %}selected{% endif %}>{{ cat.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit">Filter</button>
+      <a href="{{ url_for('main.upcoming') }}">Upcoming releases</a>
+    </div>
+  </form>
+  {% if cards %}
+    <ul class="card-grid">
+      {% for card in cards %}
+        <li>
+          <a class="content-card" href="{{ url_for('main.merchandise_detail', item_id=card.row.item_id) }}">
+            {% if card.row.image_url %}
+              <img src="{{ url_for('static', filename='images/catalog/' + card.row.image_url) }}" alt="" />
+            {% endif %}
+            <div class="card-copy">
+              <span class="type">{{ card.category.name if card.category else 'Merch' }}</span>
+              <h2>{{ card.row.name }}</h2>
+              <p>{{ card.row.description }}</p>
+              {% if card.tags %}<p class="meta-line">{{ card.tags|join(' · ') }}</p>{% endif %}
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">No merchandise in this category yet.</p>
+  {% endif %}
+{% endblock %}

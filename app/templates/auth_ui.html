@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>FanHubPlus Auth</title>
@@ -13,34 +13,34 @@
   </style>
 </head>
 <body>
-  <h1>FanHubPlus — đăng ký / đăng nhập</h1>
+  <h1>Fan Hub Plus — register / sign in</h1>
   <p>API prefix: <code>{{ api_prefix }}/auth</code></p>
 
   <section>
-    <h2>Đăng ký</h2>
-    <label>Tên <input id="name" value="Nguyen Van A" /></label>
+    <h2>Register</h2>
+    <label>Name <input id="name" value="Nguyen Van A" /></label>
     <label>Email <input id="reg_email" value="a@example.com" /></label>
-    <label>Mật khẩu <input id="reg_password" value="Matkhau1" /></label>
+    <label>Password <input id="reg_password" value="Matkhau1" /></label>
     <button type="button" id="btn-register">POST /register</button>
   </section>
 
   <section>
-    <h2>Xác minh email</h2>
+    <h2>Verify email</h2>
     <label>Token <input id="verify_token" /></label>
     <button type="button" id="btn-verify">GET /verify-email</button>
   </section>
 
   <section>
-    <h2>Đăng nhập</h2>
-    <label>Email <input id="login_email" value="admin@fanhubplus.com" /></label>
-    <label>Mật khẩu <input id="login_password" value="Admin123!" /></label>
+    <h2>Sign in</h2>
+    <label>Email <input id="login_email" value="admin@fanhub.plus" /></label>
+    <label>Password <input id="login_password" value="AdminHub#2026" /></label>
     <button type="button" id="btn-login">POST /login</button>
     <button type="button" id="btn-admin">POST /admin/login</button>
     <button type="button" id="btn-me">GET /me</button>
   </section>
 
-  <h2>Kết quả</h2>
-  <pre id="out">Sẵn sàng.</pre>
+  <h2>Result</h2>
+  <pre id="out">Ready.</pre>
   <script>
     const prefix = {{ api_prefix|tojson }} + "/auth";
     const out = document.getElementById("out");

@@ -7,13 +7,13 @@ from app.errors import AuthError
 def parse_body(schema):
     payload = request.get_json(silent=True)
     if payload is None:
-        raise AuthError(400, "invalid_json", "Body JSON không hợp lệ.")
+        raise AuthError(400, "invalid_json", "JSON body is not valid.")
     try:
         return schema.model_validate(payload)
     except ValidationError as exc:
         first = exc.errors()[0]
         loc = ".".join(str(part) for part in first.get("loc", []) if part != "body")
-        msg = first.get("msg", "Dữ liệu không hợp lệ.")
+        msg = first.get("msg", "The payload is not valid.")
         raise AuthError(422, "validation_error", f"{loc}: {msg}" if loc else msg)
 
 

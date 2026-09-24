@@ -13,13 +13,13 @@ from app.security import utcnow
 
 bp = Blueprint("chat", __name__)
 bp.strict_slashes = False
-FALLBACK = "Mình chưa tìm thấy FAQ phù hợp. Bạn có thể tìm kiếm nội dung hoặc gửi phản hồi (POST /feedback)."
+FALLBACK = "No matching FAQ yet. Search the catalog or send feedback (POST /feedback)."
 ONBOARD_STEPS = [
-    "Chọn danh mục bạn quan tâm.",
-    "Duyệt trang danh mục để xem bài viết, nhân vật và merchandise.",
-    "Dùng tìm kiếm và bộ lọc để thu hẹp kết quả.",
-    "Đăng nhập để đánh dấu nội dung yêu thích.",
-    "Khám phá sự kiện gần bạn hoặc theo thành phố.",
+    "Pick the categories you care about.",
+    "Open a category to see articles, characters, and merchandise.",
+    "Use search and filters to narrow the results.",
+    "Sign in to bookmark titles you care about.",
+    "Browse events near you or by city.",
 ]
 
 
@@ -92,7 +92,7 @@ def send_message():
             "faq": row_dict(faq) if faq else None,
             "response": answer,
             "related": related,
-            "fallback_actions": None if faq else [{"label": "Tìm kiếm", "path": "/contents"}, {"label": "Gửi phản hồi", "path": "/feedback"}],
+            "fallback_actions": None if faq else [{"label": "Search", "path": "/contents"}, {"label": "Send feedback", "path": "/feedback"}],
         }
     )
 
@@ -102,7 +102,7 @@ def history(token: str):
     db = get_db()
     session = db.query(ChatSession).filter(ChatSession.session_token == token).first()
     if session is None:
-        raise AuthError(404, "not_found", "Không tìm thấy phiên chat.")
+        raise AuthError(404, "not_found", "Chat session not found.")
     rows = (
         db.query(ChatbotQuery)
         .filter(ChatbotQuery.session_id == session.session_id)
@@ -144,7 +144,7 @@ def onboarding():
         if ids:
             suggestions = db.query(Content).filter(Content.status == "published", Content.category_id.in_(ids)).limit(5).all()
     idx = min(int(session.current_step or 0), len(ONBOARD_STEPS) - 1)
-    prompt = "Hướng dẫn đã xong. Bạn có thể hỏi FAQ." if session.onboarding_completed else ONBOARD_STEPS[idx]
+    prompt = "Onboarding is done. You can ask the FAQ next." if session.onboarding_completed else ONBOARD_STEPS[idx]
     db.commit()
     return ok(
         data={
@@ -183,7 +183,7 @@ def admin_update_faq(faq_id: int):
     db = get_db()
     row = db.get(ChatbotFaq, faq_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy FAQ.")
+        raise AuthError(404, "not_found", "FAQ not found.")
     body = parse_body(FaqIn)
     for k, v in body.model_dump().items():
         setattr(row, k, v)
@@ -198,8 +198,8 @@ def admin_delete_faq(faq_id: int):
     db = get_db()
     row = db.get(ChatbotFaq, faq_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy FAQ.")
+        raise AuthError(404, "not_found", "FAQ not found.")
     log_activity(db, admin.user_id, "faq_delete", "faq", faq_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã xóa FAQ.")
+    return ok(message="FAQ deleted.")

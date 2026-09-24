@@ -23,7 +23,7 @@ def get_category(category_id: int):
     db = get_db()
     row = db.get(Category, category_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy category.")
+        raise AuthError(404, "not_found", "Category not found.")
     fandoms = db.query(Fandom).filter(Fandom.category_id == category_id, Fandom.is_active.is_(True)).order_by(Fandom.name).all()
     featured = (
         db.query(Content)
@@ -66,7 +66,7 @@ def get_category(category_id: int):
 def list_category_fandoms(category_id: int):
     db = get_db()
     if db.get(Category, category_id) is None:
-        raise AuthError(404, "not_found", "Không tìm thấy category.")
+        raise AuthError(404, "not_found", "Category not found.")
     q = db.query(Fandom).filter(Fandom.category_id == category_id, Fandom.is_active.is_(True))
     return ok(data=[row_dict(r) for r in q.order_by(Fandom.name).all()])
 
@@ -85,7 +85,7 @@ def list_fandoms():
 def get_fandom(fandom_id: int):
     row = get_db().get(Fandom, fandom_id)
     if row is None or not row.is_active:
-        raise AuthError(404, "not_found", "Không tìm thấy fandom.")
+        raise AuthError(404, "not_found", "Fandom not found.")
     return ok(data=row_dict(row))
 
 
@@ -105,7 +105,7 @@ def admin_update_category(category_id: int):
     db = get_db()
     row = db.get(Category, category_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy category.")
+        raise AuthError(404, "not_found", "Category not found.")
     body = parse_body(CategoryUpdateIn)
     row.name = body.name.strip()
     row.slug = body.slug.strip()
@@ -122,7 +122,7 @@ def admin_create_fandom():
     db = get_db()
     body = parse_body(FandomIn)
     if db.get(Category, body.category_id) is None:
-        raise AuthError(400, "not_found", "Category không tồn tại.")
+        raise AuthError(400, "not_found", "Category not found.")
     row = Fandom(
         category_id=body.category_id,
         name=body.name.strip(),
@@ -144,11 +144,11 @@ def admin_update_fandom(fandom_id: int):
     db = get_db()
     row = db.get(Fandom, fandom_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy fandom.")
+        raise AuthError(404, "not_found", "Fandom not found.")
     body = parse_body(FandomUpdateIn)
     if body.category_id is not None:
         if db.get(Category, body.category_id) is None:
-            raise AuthError(400, "not_found", "Category không tồn tại.")
+            raise AuthError(400, "not_found", "Category not found.")
         row.category_id = body.category_id
     if body.name is not None:
         row.name = body.name.strip()
@@ -171,7 +171,7 @@ def admin_delete_fandom(fandom_id: int):
     db = get_db()
     row = db.get(Fandom, fandom_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy fandom.")
+        raise AuthError(404, "not_found", "Fandom not found.")
     from app.models import CharacterProfile, Content, Event, MerchandiseItem, UserFandom
 
     refs = (
@@ -182,11 +182,11 @@ def admin_delete_fandom(fandom_id: int):
         + db.query(UserFandom).filter(UserFandom.fandom_id == fandom_id).count()
     )
     if refs:
-        raise AuthError(409, "in_use", "Fandom đang được dùng. Ẩn (is_active=false) thay vì xóa.")
+        raise AuthError(409, "in_use", "That fandom is in use. Hide it (is_active=false) instead of deleting it.")
     log_activity(db, admin.user_id, "fandom_delete", "fandom", fandom_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã xóa fandom.")
+    return ok(message="Fandom deleted.")
 
 
 @bp.post("/admin/tags")
@@ -208,7 +208,7 @@ def admin_update_tag(tag_id: int):
     db = get_db()
     row = db.get(Tag, tag_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy tag.")
+        raise AuthError(404, "not_found", "Tag not found.")
     body = parse_body(TagIn)
     row.name = body.name.strip()
     log_activity(db, admin.user_id, "tag_update", "tag", tag_id)
@@ -222,8 +222,8 @@ def admin_delete_tag(tag_id: int):
     db = get_db()
     row = db.get(Tag, tag_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy tag.")
+        raise AuthError(404, "not_found", "Tag not found.")
     log_activity(db, admin.user_id, "tag_delete", "tag", tag_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã xóa tag.")
+    return ok(message="Tag deleted.")

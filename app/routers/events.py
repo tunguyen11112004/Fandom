@@ -64,7 +64,7 @@ def list_events():
 def get_event(event_id: int):
     row = get_db().get(Event, event_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy sự kiện.")
+        raise AuthError(404, "not_found", "Event not found.")
     return ok(data=row_dict(row))
 
 
@@ -74,9 +74,9 @@ def admin_create_event():
     db = get_db()
     body = parse_body(EventIn)
     if body.latitude is not None and not (-90 <= body.latitude <= 90):
-        raise AuthError(400, "invalid_geo", "latitude không hợp lệ.")
+        raise AuthError(400, "invalid_geo", "latitude is not valid.")
     if body.longitude is not None and not (-180 <= body.longitude <= 180):
-        raise AuthError(400, "invalid_geo", "longitude không hợp lệ.")
+        raise AuthError(400, "invalid_geo", "longitude is not valid.")
     row = Event(**body.model_dump(), created_by=admin.user_id)
     db.add(row)
     db.flush()
@@ -91,7 +91,7 @@ def admin_update_event(event_id: int):
     db = get_db()
     row = db.get(Event, event_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy sự kiện.")
+        raise AuthError(404, "not_found", "Event not found.")
     body = parse_body(EventIn)
     for k, v in body.model_dump().items():
         setattr(row, k, v)
@@ -106,8 +106,8 @@ def admin_delete_event(event_id: int):
     db = get_db()
     row = db.get(Event, event_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy sự kiện.")
+        raise AuthError(404, "not_found", "Event not found.")
     log_activity(db, admin.user_id, "event_delete", "event", event_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã xóa sự kiện.")
+    return ok(message="Event deleted.")

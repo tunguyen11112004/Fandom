@@ -1,9 +1,10 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.pyc
 *.db
-sql/*.sql.bak
 *.sqlite3
+sql/*.sql.bak
 .env
 .idea/
 .vscode/
@@ -11,3 +12,5 @@ sql/*.sql.bak
 .mypy_cache/
 uploads/
 _spec_extract.txt
+instance/
+.DS_Store

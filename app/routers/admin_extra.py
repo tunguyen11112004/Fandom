@@ -62,17 +62,17 @@ def list_users():
 def update_user(user_id: int):
     admin = get_admin_user()
     if admin.user_id == user_id:
-        raise AuthError(400, "self_forbidden", "Không được tự sửa khóa/xóa tài khoản của chính mình.")
+        raise AuthError(400, "self_forbidden", "You cannot lock or delete your own account.")
     db = get_db()
     row = db.get(User, user_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy user.")
+        raise AuthError(404, "not_found", "User not found.")
     body = parse_body(UserAdminUpdateIn)
     if body.name is not None:
         row.name = body.name
     if body.role is not None:
         if body.role not in ("user", "admin"):
-            raise AuthError(400, "invalid_role", "role phải là user hoặc admin.")
+            raise AuthError(400, "invalid_role", "role must be user or admin.")
         row.role = body.role
     if body.is_active is not None:
         row.is_active = body.is_active
@@ -87,16 +87,16 @@ def update_user(user_id: int):
 def lock_user(user_id: int):
     admin = get_admin_user()
     if admin.user_id == user_id:
-        raise AuthError(400, "self_forbidden", "Không được tự khóa tài khoản.")
+        raise AuthError(400, "self_forbidden", "You cannot lock your own account.")
     db = get_db()
     row = db.get(User, user_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy user.")
+        raise AuthError(404, "not_found", "User not found.")
     row.is_active = False
     row.session_version = (row.session_version or 1) + 1
     log_activity(db, admin.user_id, "user_deactivate", "user", user_id, "sessions revoked")
     db.commit()
-    return ok(data=user_public(row), message="Đã khóa tài khoản.")
+    return ok(data=user_public(row), message="Account locked.")
 
 
 @bp.post("/admin/users/<int:user_id>/unlock")
@@ -105,11 +105,11 @@ def unlock_user(user_id: int):
     db = get_db()
     row = db.get(User, user_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy user.")
+        raise AuthError(404, "not_found", "User not found.")
     row.is_active = True
     log_activity(db, admin.user_id, "user_activate", "user", user_id)
     db.commit()
-    return ok(data=user_public(row), message="Đã mở khóa.")
+    return ok(data=user_public(row), message="Account unlocked.")
 
 
 @bp.get("/admin/reports/overview")

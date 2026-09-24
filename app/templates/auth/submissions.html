@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Send a piece · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-anime auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <p class="kicker">Fan desk</p>
+  <h1>Send something in</h1>
+  <p>It stays pending until an admin publishes it or sends it back with a reason.</p>
+  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+  {% if mine %}
+  <ul class="desk-list">
+    {% for row in mine %}
+      <li>
+        <strong>{{ row.title }}</strong>
+        <span class="chip">{{ row.status }}</span>
+        {% if row.status == 'rejected' %}
+          <a href="{{ url_for('account.submissions', edit=row.id) }}">Revise</a>
+          {% if row.reject_reason %}<p>{{ row.reject_reason }}</p>{% endif %}
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" class="desk-form">
+    {% if edit %}<input type="hidden" name="submission_id" value="{{ edit.id }}" />{% endif %}
+    <label for="title">Title</label>
+    <input id="title" name="title" required maxlength="200" value="{{ edit.title if edit else '' }}" />
+    <label for="category_id">Category</label>
+    <select id="category_id" name="category_id" required>
+      {% for category in categories %}
+        <option value="{{ category.id }}">{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <label for="content_type">Type</label>
+    <select id="content_type" name="content_type">
+      <option value="article">Article</option>
+      <option value="image">Image</option>
+      <option value="video">Video</option>
+      <option value="profile">Character note</option>
+    </select>
+    <label for="body">The piece</label>
+    <textarea id="body" name="body" rows="6" required>{{ edit.body if edit else '' }}</textarea>
+    <label for="media_url">Image or media link, optional</label>
+    <input id="media_url" name="media_url" type="url" placeholder="https://" />
+    <label class="check"><input type="checkbox" name="rights" value="yes" required /> I have the right to share this.</label>
+    <button type="submit">Send for review</button>
+  </form>
+  <p class="auth-links"><a href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
+</section>
+{% endblock %}

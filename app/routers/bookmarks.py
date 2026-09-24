@@ -59,7 +59,7 @@ def _snapshot(db, bm: Bookmark) -> dict:
         title = c.title if c else None
     extra = {"target_type": _target_kind(bm), "available": available, "target_title": title}
     if not available:
-        extra["unavailable_reason"] = "Mục không còn khả dụng."
+        extra["unavailable_reason"] = "This item is no longer available."
     return row_dict(bm, extra=extra)
 
 
@@ -88,9 +88,9 @@ def add_bookmark():
     body = parse_body(BookmarkIn)
     ids = [body.content_id, body.character_id, body.merchandise_id, body.event_id]
     if sum(1 for v in ids if v is not None) != 1:
-        raise AuthError(400, "invalid_target", "Bookmark phải trỏ đúng một đối tượng.")
+        raise AuthError(400, "invalid_target", "A bookmark must point at exactly one target.")
     if not _exists(db, body):
-        raise AuthError(404, "not_found", "Đối tượng không tồn tại.")
+        raise AuthError(404, "not_found", "That target does not exist.")
     q = db.query(Bookmark).filter(Bookmark.user_id == user.user_id)
     if body.content_id:
         q = q.filter(Bookmark.content_id == body.content_id)
@@ -107,7 +107,7 @@ def add_bookmark():
         db.delete(existing)
         refresh_content_popularity(db, cid)
         db.commit()
-        return ok(data={"removed": True, "bookmark_id": existing.bookmark_id}, message="Đã bỏ đánh dấu.")
+        return ok(data={"removed": True, "bookmark_id": existing.bookmark_id}, message="Bookmark removed.")
     row = Bookmark(
         user_id=user.user_id,
         content_id=body.content_id,
@@ -130,7 +130,7 @@ def update_note(bookmark_id: int):
     db = get_db()
     row = db.get(Bookmark, bookmark_id)
     if row is None or row.user_id != user.user_id:
-        raise AuthError(404, "not_found", "Không tìm thấy bookmark.")
+        raise AuthError(404, "not_found", "Bookmark not found.")
     body = parse_body(BookmarkNoteIn)
     row.note = body.note
     db.commit()
@@ -143,11 +143,11 @@ def remove_bookmark(bookmark_id: int):
     db = get_db()
     row = db.get(Bookmark, bookmark_id)
     if row is None or row.user_id != user.user_id:
-        raise AuthError(404, "not_found", "Không tìm thấy bookmark.")
+        raise AuthError(404, "not_found", "Bookmark not found.")
     log_activity(db, user.user_id, "bookmark_remove", "bookmark", bookmark_id)
     db.delete(row)
     db.commit()
-    return ok(message="Đã bỏ bookmark.")
+    return ok(message="Bookmark removed.")
 
 
 @bp.post("/bookmarks/<int:bookmark_id>/share")
@@ -156,7 +156,7 @@ def share_bookmark(bookmark_id: int):
     db = get_db()
     row = db.get(Bookmark, bookmark_id)
     if row is None or row.user_id != user.user_id:
-        raise AuthError(404, "not_found", "Không tìm thấy bookmark.")
+        raise AuthError(404, "not_found", "Bookmark not found.")
     if not row.share_token:
         row.share_token = secrets.token_hex(16)
         db.commit()
@@ -168,5 +168,5 @@ def share_bookmark(bookmark_id: int):
 def shared_bookmark(token: str):
     row = get_db().query(Bookmark).filter(Bookmark.share_token == token).first()
     if row is None:
-        raise AuthError(404, "not_found", "Liên kết chia sẻ không hợp lệ.")
+        raise AuthError(404, "not_found", "That share link is not valid.")
     return ok(data=row_dict(row, extra={"target_type": _target_kind(row)}))

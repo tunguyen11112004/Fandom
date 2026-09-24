@@ -39,7 +39,7 @@ def _check_embed(url: str | None) -> None:
 
     host = (urlparse(url).netloc or "").lower()
     if not any(h in host for h in EMBED_HOSTS):
-        raise AuthError(400, "invalid_embed", "Chỉ cho phép nhúng YouTube, Vimeo hoặc Spotify.")
+        raise AuthError(400, "invalid_embed", "Only YouTube, Vimeo, or Spotify embeds are allowed.")
 
 
 
@@ -128,7 +128,7 @@ def list_contents():
     sort = request.args.get("sort", "latest")
     advanced = any([genre_id, year, fan, featured in ("1", "true", "True"), sort not in ("latest", "", None)])
     if advanced and user is None:
-        raise AuthError(401, "login_required", "Lọc/sắp xếp nâng cao dành cho thành viên. Hãy đăng nhập.")
+        raise AuthError(401, "login_required", "Advanced filters are for members. Sign in to continue.")
     q = _public_q(db)
     if qtext:
         like = f"%{qtext}%"
@@ -146,7 +146,7 @@ def list_contents():
     if featured in ("1", "true", "True"):
         q = q.filter(Content.is_featured.is_(True))
     if sort not in SORTS:
-        raise AuthError(400, "invalid_sort", "sort phải là latest, popular hoặc alpha.")
+        raise AuthError(400, "invalid_sort", "sort must be latest, popular, or alpha.")
     if sort == "popular":
         q = q.order_by(Content.popularity_score.desc(), Content.view_count.desc())
     elif sort == "alpha":
@@ -160,7 +160,7 @@ def list_contents():
     }.items() if v not in (None, "")}
     empty_hint = None
     if not items:
-        empty_hint = "Không có kết quả. Hãy nới bộ lọc hoặc hỏi chatbot."
+        empty_hint = "No matches. Widen the filters or ask the chatbot."
     return ok(data={"items": [row_dict(i) for i in items], "meta": meta, "applied_filters": applied, "empty_hint": empty_hint})
 
 
@@ -206,7 +206,7 @@ def get_content(content_id: int):
     db = get_db()
     row = db.get(Content, content_id)
     if row is None or row.status != "published":
-        raise AuthError(404, "not_found", "Không tìm thấy nội dung.")
+        raise AuthError(404, "not_found", "Content not found.")
     row.view_count = (row.view_count or 0) + 1
     user = get_optional_user()
     log_activity(db, user.user_id if user else None, "view", "content", content_id)
@@ -222,7 +222,7 @@ def rate_content(content_id: int):
     db = get_db()
     content = db.get(Content, content_id)
     if content is None or content.status != "published":
-        raise AuthError(404, "not_found", "Không tìm thấy nội dung.")
+        raise AuthError(404, "not_found", "Content not found.")
     body = parse_body(RatingIn)
     row = db.query(ContentRating).filter(ContentRating.user_id == user.user_id, ContentRating.content_id == content_id).first()
     if row:
@@ -232,7 +232,7 @@ def rate_content(content_id: int):
     log_activity(db, user.user_id, "rate", "content", content_id, f"score={body.score}")
     refresh_content_popularity(db, content_id)
     db.commit()
-    return ok(data=rating_summary(db, content_id), message="Đã lưu đánh giá.")
+    return ok(data=rating_summary(db, content_id), message="Rating saved.")
 
 
 @bp.post("/admin/contents")
@@ -241,9 +241,9 @@ def admin_create_content():
     db = get_db()
     body = parse_body(ContentIn)
     if db.get(Category, body.category_id) is None:
-        raise AuthError(400, "not_found", "Category không tồn tại.")
+        raise AuthError(400, "not_found", "Category not found.")
     if body.status == "published" and body.type in MEDIA_TYPES and (not body.source_url or not body.rights_confirmed):
-        raise AuthError(400, "rights_required", "Media published cần source_url và rights_confirmed.")
+        raise AuthError(400, "rights_required", "Published media needs source_url and rights_confirmed.")
     _check_embed(body.embed_url)
     row = Content(
         category_id=body.category_id,
@@ -281,10 +281,10 @@ def admin_update_content(content_id: int):
     db = get_db()
     row = db.get(Content, content_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy nội dung.")
+        raise AuthError(404, "not_found", "Content not found.")
     body = parse_body(ContentIn)
     if body.status == "published" and body.type in MEDIA_TYPES and (not body.source_url or not body.rights_confirmed):
-        raise AuthError(400, "rights_required", "Media published cần source_url và rights_confirmed.")
+        raise AuthError(400, "rights_required", "Published media needs source_url and rights_confirmed.")
     _check_embed(body.embed_url)
     for field in (
         "category_id", "fandom_id", "title", "type", "summary", "description", "body", "media_url",
@@ -305,11 +305,11 @@ def admin_delete_content(content_id: int):
     db = get_db()
     row = db.get(Content, content_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy nội dung.")
+        raise AuthError(404, "not_found", "Content not found.")
     row.status = "archived"
     log_activity(db, admin.user_id, "content_unpublish", "content", content_id, "archived")
     db.commit()
-    return ok(data=row_dict(row), message="Đã ẩn nội dung (archived). Bookmark sẽ hiện không còn khả dụng.")
+    return ok(data=row_dict(row), message="Content was archived. Bookmarks will show it as unavailable.")
 
 
 @bp.get("/admin/contents")

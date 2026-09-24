@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Fan Hub Plus{% endblock %}
+{% block body_class %}home{% endblock %}
+{% block content %}
+  <section class="hero hero-stage">
+    <div class="blast" aria-hidden="true">
+      <img src="{{ url_for('static', filename='images/hero-blast.png') }}" alt="" />
+      <span class="blast-veil"></span>
+    </div>
+    <div class="hero-copy">
+      <p class="kicker">Shonen, first</p>
+      <h1>If you don't take risks, you can't create a future<br>Push through the pain. Giving up hurts more</h1>
+      <p class="lede">
+        Fourteen series sit on the front shelf: the pirate crew, the Hidden Leaf,
+        and the titles people are still arguing about. Each card has the creator,
+        the year it started, and the premise in one breath.
+      </p>
+      <form class="hero-search" action="{{ url_for('main.explore') }}" method="get">
+        <label class="sr-only" for="home-q">Search the catalog</label>
+        <input
+          id="home-q"
+          name="q"
+          type="search"
+          placeholder="Try One Piece, Naruto, or Jujutsu Kaisen"
+          autocomplete="off"
+        />
+        <button type="submit">Search</button>
+      </form>
+      <p class="meta-line">{{ total }} pieces in the catalog</p>
+    </div>
+    <div class="reel" data-reel>
+      <div class="reel-frame">
+        {% for series in hottest[:8] %}
+          {% if series.image %}
+            <figure class="reel-slide{% if loop.first %} is-on{% endif %}" data-title="{{ series.name }}" data-meta="{{ series.creator }} · {{ series.year }}">
+              <img src="{{ url_for('static', filename='images/series/' + series.image) }}" alt="" />
+            </figure>
+          {% endif %}
+        {% endfor %}
+        <div class="reel-shade" aria-hidden="true"></div>
+        <div class="reel-caption">
+          <p class="reel-kicker">Now playing</p>
+          <p class="reel-title">{{ hottest[0].name }}</p>
+          <p class="reel-meta">{{ hottest[0].creator }} · {{ hottest[0].year }}</p>
+        </div>
+        <div class="reel-bar" aria-hidden="true"><span></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="paths-heading">
+    <div class="section-head">
+      <h2 id="paths-heading">Five paths</h2>
+      <a href="{{ url_for('main.sitemap') }}">Sitemap</a>
+    </div>
+    <p class="lede">Taken from the use-case spec: the journeys a guest, a member, and an admin actually walk.</p>
+    <ol class="path-grid">
+      <li>
+        <article class="path-card">
+          <span class="index">01</span>
+          <h3>Guest becomes a member</h3>
+          <p>Browse freely. Bookmark, rate, or send a fan post, and the hub asks you to sign in, then brings you back to the same page.</p>
+        </article>
+      </li>
+      <li>
+        <article class="path-card">
+          <span class="index">02</span>
+          <h3>Search, play, mark</h3>
+          <p>Filter the stacks, open a title, play the media, rate it once, and bookmark it. Each action feeds the popularity score.</p>
+        </article>
+      </li>
+      <li>
+        <article class="path-card">
+          <span class="index">03</span>
+          <h3>Fan post, then review</h3>
+          <p>A member submits a story. It stays pending until an admin approves or rejects it, and the author hears the result.</p>
+        </article>
+      </li>
+      <li>
+        <article class="path-card">
+          <span class="index">04</span>
+          <h3>Events near you</h3>
+          <p>Share location, or pick a city. The same events show on a map and on a calendar. Ticket links open outside the hub.</p>
+        </article>
+      </li>
+      <li>
+        <article class="path-card">
+          <span class="index">05</span>
+          <h3>Mina walks you in</h3>
+          <p>The support chat answers from the hub, suggests a series, and points you at search or feedback when she does not know.</p>
+        </article>
+      </li>
+    </ol>
+  </section>
+
+  <section class="section" aria-labelledby="flagship-heading">
+    <div class="section-head">
+      <h2 id="flagship-heading">Start here</h2>
+      <a href="{{ url_for('main.explore', category='anime') }}">Anime catalog</a>
+    </div>
+    <div class="flagship">
+      {% for series in hottest[:2] %}
+        <article class="flagship-card" style="--accent: {{ series.accent }}">
+          {% if series.image %}
+            <img src="{{ url_for('static', filename='images/series/' + series.image) }}" alt="" />
+          {% endif %}
+          <div class="flagship-copy">
+            <p class="kicker">{{ series.genre }} · {{ series.year }}</p>
+            <h3>{{ series.name }}</h3>
+            <p class="byline">{{ series.creator }} · {{ series.kind }}</p>
+            <p>{{ series.about }}</p>
+            <p class="note">{{ series.note }}</p>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="hot-heading">
+    <div class="section-head">
+      <h2 id="hot-heading">The rest of the shelf</h2>
+      <a href="{{ url_for('main.explore', category='manga') }}">Manga shelf</a>
+    </div>
+    <ol class="hot-grid">
+      {% for series in hottest[2:] %}
+        <li>
+          <article class="hot-card" style="--accent: {{ series.accent }}">
+            <div class="hot-visual">
+              {% if series.image %}
+                <img src="{{ url_for('static', filename='images/series/' + series.image) }}" alt="" />
+              {% endif %}
+              <div class="hot-caption">
+                <span class="index">{{ "%02d"|format(loop.index + 2) }}</span>
+                <h3>{{ series.name }}</h3>
+                <p>{{ series.creator }} · {{ series.year }}</p>
+              </div>
+            </div>
+            <div class="hot-copy">
+              <p class="genre-line">{{ series.genre }}</p>
+              <p>{{ series.about }}</p>
+            </div>
+          </article>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="section" aria-labelledby="news-heading">
+    <div class="section-head">
+      <h2 id="news-heading">Anime and manga news</h2>
+      <a href="{{ url_for('main.news') }}">All headlines</a>
+    </div>
+    <ol class="news-list">
+      {% for item in headlines %}
+        <li>
+          <article class="news-item">
+            <p class="news-meta">
+              <time datetime="{{ item.date }}">{{ item.date }}</time>
+              <span class="tag">{{ item.world }}</span>
+            </p>
+            <h3><a href="{{ item.url }}" rel="noopener noreferrer">{{ item.title }}</a></h3>
+            <p>{{ item.summary }}</p>
+          </article>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+
+  <section class="section" aria-labelledby="categories-heading">
+    <div class="section-head">
+      <h2 id="categories-heading">Also on the hub</h2>
+      <a href="{{ url_for('main.explore') }}">Browse everything</a>
+    </div>
+    <ol class="category-grid">
+      {% for category in categories %}
+        <li>
+          <a class="category-card" href="{{ url_for('main.explore', category=category.slug) }}">
+            {% if category.image_path %}
+              <img src="{{ url_for('static', filename='images/catalog/' + category.image_path) }}" alt="" />
+            {% endif %}
+            <div class="card-copy">
+              <span class="index">{{ "%02d"|format(loop.index) }}</span>
+              <h3>{{ category.name }}</h3>
+              <p>{{ category.description }}</p>
+              <span class="count">{{ counts.get(category.slug, 0) }} items</span>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+{% endblock %}
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/reel.js') }}"></script>
+{% endblock %}

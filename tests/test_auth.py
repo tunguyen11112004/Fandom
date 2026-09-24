@@ -13,8 +13,15 @@ def test_auth_index_is_not_404():
     assert "login" in body["data"]["endpoints"]
 
 
-def test_root_lists_auth():
+def test_root_is_the_site():
     r = client.get("/")
+    assert r.status_code == 200
+    assert b"Fan Hub Plus" in r.data
+
+
+def test_health_and_api_index():
+    assert client.get("/health").status_code == 200
+    r = client.get("/api")
     assert r.status_code == 200
     assert r.get_json()["groups"]["auth"] == "/api/be/v1/auth"
 

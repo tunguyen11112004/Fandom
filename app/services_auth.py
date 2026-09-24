@@ -24,8 +24,8 @@ from app.security import (
     verify_password,
 )
 
-GENERIC_LOGIN_FAIL = "Email hoặc mật khẩu không đúng."
-GENERIC_RESET_SENT = "Nếu email tồn tại, liên kết đã được gửi."
+GENERIC_LOGIN_FAIL = "Email or password is not right."
+GENERIC_RESET_SENT = "If that email exists, a link has been sent."
 
 
 def _err(code: int, error: str, message: str) -> AuthError:
@@ -73,12 +73,12 @@ def _revoke_user_sessions(db: Session, user: User) -> None:
 
 def register_user(db: Session, name: str, email: str, password: str, password_confirm: str) -> tuple[User, str]:
     if password != password_confirm:
-        raise _err(400, "password_mismatch", "Mật khẩu xác nhận không khớp.")
+        raise _err(400, "password_mismatch", "The two passwords do not match.")
     if not password_is_strong(password):
-        raise _err(400, "weak_password", "Mật khẩu tối thiểu 8 ký tự, có chữ và số.")
+        raise _err(400, "weak_password", "Use at least 8 characters, with a letter and a number.")
     email_n = email.lower().strip()
     if find_user_by_email(db, email_n):
-        raise _err(409, "email_exists", "Email đã tồn tại. Hãy đăng nhập hoặc khôi phục mật khẩu.")
+        raise _err(409, "email_exists", "That email is already registered. Sign in or reset the password.")
     user = sp_register_user(db, name.strip(), email_n, hash_password(password))
     raw = create_purpose_token(db, user, "email_verify", timedelta(hours=settings.email_verify_hours))
     send_verify_email(user.email, raw)
@@ -96,7 +96,7 @@ def resend_verification(db: Session, email: str) -> str | None:
 
 def verify_email(db: Session, raw_token: str) -> User:
     if not raw_token:
-        raise _err(400, "invalid_token", "Liên kết không hợp lệ.")
+        raise _err(400, "invalid_token", "That link is not valid.")
     return sp_verify_email(db, hash_token(raw_token))
 
 
@@ -105,15 +105,15 @@ def login(db: Session, email: str, password: str, require_admin: bool = False) -
     if user is None or not verify_password(password, user.password_hash):
         raise _err(401, "invalid_credentials", GENERIC_LOGIN_FAIL)
     if not user.is_active:
-        raise _err(403, "account_locked", "Tài khoản đã bị khóa.")
+        raise _err(403, "account_locked", "This account is locked.")
     if user.email_verified_at is None:
         raise _err(
             403,
             "email_unverified",
-            "Email chưa xác minh. Hãy mở liên kết trong hộp thư hoặc yêu cầu gửi lại.",
+            "Email is not verified. Open the link in your inbox, or request a new one.",
         )
     if require_admin and user.role != "admin":
-        raise _err(403, "not_admin", "Tài khoản không có quyền quản trị.")
+        raise _err(403, "not_admin", "This account is not an administrator.")
     return issue_tokens(db, user, mark_login=True)
 
 
@@ -135,10 +135,10 @@ def refresh_tokens(db: Session, refresh_token: str) -> dict:
         .first()
     )
     if row is None or row.revoked_at is not None or row.expires_at < utcnow():
-        raise _err(401, "invalid_refresh", "Phiên hết hạn. Hãy đăng nhập lại.")
+        raise _err(401, "invalid_refresh", "Your session expired. Sign in again.")
     user = db.get(User, row.user_id)
     if user is None or not user.is_active:
-        raise _err(403, "account_locked", "Tài khoản đã bị khóa.")
+        raise _err(403, "account_locked", "This account is locked.")
     row.revoked_at = utcnow()
     db.commit()
     return issue_tokens(db, user, mark_login=False)
@@ -157,9 +157,9 @@ def request_password_reset(db: Session, email: str) -> str | None:
 
 def reset_password(db: Session, raw_token: str, password: str, password_confirm: str) -> None:
     if password != password_confirm:
-        raise _err(400, "password_mismatch", "Mật khẩu xác nhận không khớp.")
+        raise _err(400, "password_mismatch", "The two passwords do not match.")
     if not password_is_strong(password):
-        raise _err(400, "weak_password", "Mật khẩu tối thiểu 8 ký tự, có chữ và số.")
+        raise _err(400, "weak_password", "Use at least 8 characters, with a letter and a number.")
     user = sp_reset_password(db, hash_token(raw_token), hash_password(password))
     _revoke_user_sessions(db, user)
 

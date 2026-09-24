@@ -19,9 +19,9 @@ def create_feedback():
     db = get_db()
     body = parse_body(FeedbackIn)
     if body.type not in ("bug", "suggestion", "query"):
-        raise AuthError(400, "invalid_type", "type phải là bug, suggestion hoặc query.")
+        raise AuthError(400, "invalid_type", "type must be bug, suggestion, or query.")
     if user is None and not body.contact_email:
-        raise AuthError(400, "email_required", "Visitor phải nhập email liên hệ.")
+        raise AuthError(400, "email_required", "Guests need a contact email.")
     row = Feedback(
         user_id=user.user_id if user else None,
         contact_email=str(body.contact_email) if body.contact_email else (user.email if user else None),
@@ -61,11 +61,11 @@ def admin_update_feedback(feedback_id: int):
     db = get_db()
     row = db.get(Feedback, feedback_id)
     if row is None or row.is_deleted:
-        raise AuthError(404, "not_found", "Không tìm thấy feedback.")
+        raise AuthError(404, "not_found", "Feedback not found.")
     body = parse_body(FeedbackUpdateIn)
     if body.status:
         if body.status not in ("new", "in_progress", "resolved", "closed"):
-            raise AuthError(400, "invalid_status", "status không hợp lệ.")
+            raise AuthError(400, "invalid_status", "status is not valid.")
         row.status = body.status
         if body.status in ("resolved", "closed"):
             row.resolved_at = utcnow()
@@ -83,10 +83,10 @@ def admin_delete_feedback(feedback_id: int):
     db = get_db()
     row = db.get(Feedback, feedback_id)
     if row is None:
-        raise AuthError(404, "not_found", "Không tìm thấy feedback.")
+        raise AuthError(404, "not_found", "Feedback not found.")
     row.is_deleted = True
     row.deleted_by = admin.user_id
     row.deleted_at = utcnow()
     log_activity(db, admin.user_id, "feedback_delete", "feedback", feedback_id)
     db.commit()
-    return ok(message="Đã ẩn feedback (soft delete).")
+    return ok(message="Feedback was hidden (soft delete).")
