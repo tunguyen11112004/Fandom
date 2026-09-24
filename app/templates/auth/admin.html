@@ -3,22 +3,24 @@
 {% block body_class %}stack-movies auth desk{% endblock %}
 {% block content %}
 <section class="auth-panel desk-panel console">
-  <header class="desk-top">
-    <div>
-      <p class="kicker">Admin desk</p>
-      <h1>Control panel</h1>
-      <p>Signed in as {{ user.name }}. Work the queue first, then the catalog, then the people.</p>
-    </div>
-    <nav class="desk-actions" aria-label="Admin sections">
-      <a href="#queue">Queue</a>
-      <a href="#health">Health</a>
-      <a href="#content">Catalog</a>
-      <a href="#categories">Categories</a>
-      <a href="#users">Members</a>
-      <a href="#record">Record</a>
+  <div class="console-shell">
+  <aside class="console-side">
+    <p class="kicker">Admin desk</p>
+    <h1>Control panel</h1>
+    <p class="side-note">Signed in as {{ user.name }}.</p>
+    <nav aria-label="Admin sections">
+      <a href="{{ url_for('account.admin_home', tab='queue') }}" {% if tab == 'queue' %}aria-current="page"{% endif %}>Queue <span>{{ queue|length }}</span></a>
+      <a href="{{ url_for('account.admin_home', tab='feedback') }}" {% if tab == 'feedback' %}aria-current="page"{% endif %}>Feedback <span>{{ open_feedback }}</span></a>
+      <a href="{{ url_for('account.admin_home', tab='health', days=days) }}" {% if tab == 'health' %}aria-current="page"{% endif %}>Health</a>
+      <a href="{{ url_for('account.admin_home', tab='content') }}" {% if tab == 'content' %}aria-current="page"{% endif %}>Catalog</a>
+      <a href="{{ url_for('account.admin_home', tab='categories') }}" {% if tab == 'categories' %}aria-current="page"{% endif %}>Categories</a>
+      <a href="{{ url_for('account.admin_home', tab='users') }}" {% if tab == 'users' %}aria-current="page"{% endif %}>Members</a>
+      <a href="{{ url_for('account.admin_home', tab='record') }}" {% if tab == 'record' %}aria-current="page"{% endif %}>Record</a>
     </nav>
-  </header>
+  </aside>
+  <div class="console-main">
 
+  {% if tab == 'queue' %}
   <section id="queue" class="console-block">
     <header class="panel-head">
       <p class="step">01</p>
@@ -53,10 +55,21 @@
           <p class="empty-line">The queue is clear.</p>
         {% endfor %}
       </div>
+    </div>
+  </section>
+  {% endif %}
 
-      <div class="panel-card" id="feedback">
-        <h3>Feedback</h3>
+  {% if tab == 'feedback' %}
+  <section id="feedback" class="console-block">
+    <header class="panel-head">
+      <div>
+        <h2>Feedback</h2>
+        <p>{{ open_feedback }} item{{ '' if open_feedback == 1 else 's' }} still open.</p>
+      </div>
+    </header>
+    <div class="panel-card">
         <form method="get" class="filter-line">
+          <input type="hidden" name="tab" value="feedback" />
           <input type="hidden" name="days" value="{{ days }}" />
           {% if query %}<input type="hidden" name="q" value="{{ query }}" />{% endif %}
           <label class="sr-only" for="kind">Type</label>
@@ -101,10 +114,11 @@
         {% else %}
           <p class="empty-line">No feedback in this filter.</p>
         {% endfor %}
-      </div>
     </div>
   </section>
+  {% endif %}
 
+  {% if tab == 'health' %}
   <section id="health" class="console-block">
     <header class="panel-head">
       <p class="step">02</p>
@@ -114,9 +128,9 @@
       </div>
     </header>
     <nav class="chip-row" aria-label="Time window">
-      <a href="{{ url_for('account.admin_home', days='7') }}#health" {% if days == '7' %}aria-current="true"{% endif %}>7 days</a>
-      <a href="{{ url_for('account.admin_home', days='30') }}#health" {% if days == '30' %}aria-current="true"{% endif %}>30 days</a>
-      <a href="{{ url_for('account.admin_home', days='all') }}#health" {% if days == 'all' %}aria-current="true"{% endif %}>All time</a>
+      <a href="{{ url_for('account.admin_home', tab='health', days='7') }}" {% if days == '7' %}aria-current="true"{% endif %}>7 days</a>
+      <a href="{{ url_for('account.admin_home', tab='health', days='30') }}" {% if days == '30' %}aria-current="true"{% endif %}>30 days</a>
+      <a href="{{ url_for('account.admin_home', tab='health', days='all') }}" {% if days == 'all' %}aria-current="true"{% endif %}>All time</a>
     </nav>
     <ul class="kpi-row">
       <li><span>Active members</span><strong>{{ active_users }}</strong></li>
@@ -134,7 +148,9 @@
       {% endfor %}
     </ul>
   </section>
+  {% endif %}
 
+  {% if tab == 'content' %}
   <section id="content" class="console-block">
     <header class="panel-head">
       <p class="step">03</p>
@@ -235,7 +251,9 @@
       </table>
     </div>
   </section>
+  {% endif %}
 
+  {% if tab == 'categories' %}
   <section id="categories" class="console-block">
     <header class="panel-head">
       <p class="step">04</p>
@@ -254,7 +272,9 @@
       {% endfor %}
     </div>
   </section>
+  {% endif %}
 
+  {% if tab == 'users' %}
   <section id="users" class="console-block">
     <header class="panel-head">
       <p class="step">05</p>
@@ -264,6 +284,7 @@
       </div>
     </header>
     <form method="get" class="filter-line">
+      <input type="hidden" name="tab" value="users" />
       <input type="hidden" name="days" value="{{ days }}" />
       <label class="sr-only" for="q">Search members</label>
       <input id="q" name="q" value="{{ query }}" placeholder="Name or email" />
@@ -300,7 +321,9 @@
       </table>
     </div>
   </section>
+  {% endif %}
 
+  {% if tab == 'record' %}
   <section id="record" class="console-block">
     <header class="panel-head">
       <p class="step">06</p>
@@ -320,5 +343,8 @@
       {% endfor %}
     </ol>
   </section>
+  {% endif %}
+  </div>
+  </div>
 </section>
 {% endblock %}

@@ -2627,6 +2627,61 @@ body.auth.desk .desk-panel {
   margin: 0 0 0.25rem;
 }
 
+.console-shell {
+  display: grid;
+  grid-template-columns: 14.5rem minmax(0, 1fr);
+  gap: 1.2rem 1.4rem;
+  text-align: left;
+}
+
+.console-side h1 {
+  font-size: clamp(1.6rem, 3vw, 2.1rem);
+}
+
+.side-note {
+  margin: 0.35rem 0 0;
+  color: #e7edf8;
+}
+
+.console-side nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.console-side nav a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(247, 243, 234, 0.18);
+  background: rgba(4, 8, 18, 0.55);
+  color: #f7f3ea;
+  text-decoration: none;
+}
+
+.console-side nav a span {
+  min-width: 1.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(242, 193, 78, 0.18);
+  color: #f2c14e;
+  text-align: center;
+  font-size: 0.82rem;
+}
+
+.console-side nav a[aria-current="page"] {
+  border-color: rgba(242, 193, 78, 0.7);
+  background: rgba(242, 193, 78, 0.14);
+  color: #f2c14e;
+}
+
+.console-main .desk-grid {
+  grid-template-columns: 1fr;
+}
+
 .desk-panel h2,
 .desk-panel h3 {
   margin: 0;
@@ -3039,5 +3094,14 @@ body .section-head h2 {
   .desk-top {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .console-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .console-side nav {
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 }

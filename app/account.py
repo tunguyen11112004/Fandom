@@ -527,9 +527,13 @@ def admin_home():
             .order_by(User.name)
             .all()
         )
+    tab = request.args.get("tab", "queue")
+    if tab not in {"queue", "feedback", "health", "content", "categories", "users", "record"}:
+        tab = "queue"
     return render_template(
         "auth/admin.html",
         user=user,
+        tab=tab,
         days=days,
         active_users=active_query.count(),
         member_count=User.query.filter_by(role="member").count(),
@@ -608,12 +612,12 @@ def admin_content_create():
     item = Content(slug="", category_id=1, title="", content_type="article", genre="", summary="", body="", release_year=2026)
     error = _content_from_form(item)
     if error:
-        return redirect(url_for("account.admin_home", error=error))
+        return redirect(url_for("account.admin_home", tab="content", error=error))
     item.slug = _slugify(item.title)
     db.session.add(item)
     _admin_log(user, "content.create", item.title)
     db.session.commit()
-    return redirect(url_for("account.admin_home") + "#content")
+    return redirect(url_for("account.admin_home", tab="content"))
 
 
 @bp.route("/admin/content/<int:item_id>", methods=["POST"])
@@ -628,12 +632,12 @@ def admin_content_update(item_id):
         item.published = False
         _admin_log(user, "content.hide", item.title)
         db.session.commit()
-        return redirect(url_for("account.admin_home") + "#content")
+        return redirect(url_for("account.admin_home", tab="content"))
     error = _content_from_form(item)
     if error is None:
         _admin_log(user, "content.edit", item.title)
         db.session.commit()
-    return redirect(url_for("account.admin_home") + "#content")
+    return redirect(url_for("account.admin_home", tab="content"))
 
 
 @bp.route("/admin/category/<int:category_id>", methods=["POST"])
@@ -646,7 +650,7 @@ def admin_category(category_id):
         category.description = request.form.get("description", category.description).strip() or category.description
         _admin_log(user, "category.edit", category.name)
         db.session.commit()
-    return redirect(url_for("account.admin_home") + "#categories")
+    return redirect(url_for("account.admin_home", tab="categories"))
 
 
 @bp.route("/admin/users/<int:user_id>", methods=["POST"])
@@ -659,7 +663,7 @@ def admin_user(user_id):
         member.locked = request.form.get("locked") == "yes"
         _admin_log(admin, "user.lock" if member.locked else "user.unlock", member.email)
         db.session.commit()
-    return redirect(url_for("account.admin_home") + "#users")
+    return redirect(url_for("account.admin_home", tab="users"))
 
 
 @bp.route("/admin/submissions/<int:submission_id>", methods=["POST"])
@@ -669,7 +673,7 @@ def admin_submission(submission_id):
         return redirect(url_for("account.admin_login"))
     row = db.session.get(FanSubmission, submission_id)
     if row is None:
-        return redirect(url_for("account.admin_home") + "#queue")
+        return redirect(url_for("account.admin_home", tab="queue"))
     decision = request.form.get("decision")
     if decision == "approve":
         item = Content(
@@ -696,7 +700,7 @@ def admin_submission(submission_id):
         row.reject_reason = reason[:300]
         _admin_log(admin, "submission.reject", f"{row.title}: {row.reject_reason}")
     db.session.commit()
-    return redirect(url_for("account.admin_home") + "#queue")
+    return redirect(url_for("account.admin_home", tab="queue"))
 
 
 @bp.route("/admin/feedback/<int:feedback_id>", methods=["POST"])
@@ -706,7 +710,7 @@ def admin_feedback(feedback_id):
         return redirect(url_for("account.admin_login"))
     row = db.session.get(Feedback, feedback_id)
     if row is None:
-        return redirect(url_for("account.admin_home") + "#feedback")
+        return redirect(url_for("account.admin_home", tab="feedback"))
     if request.form.get("action") == "delete":
         _admin_log(admin, "feedback.delete", row.email)
         db.session.delete(row)
@@ -717,4 +721,4 @@ def admin_feedback(feedback_id):
         row.admin_note = request.form.get("admin_note", "").strip()[:300]
         _admin_log(admin, "feedback.update", f"{row.kind} → {row.status}")
     db.session.commit()
-    return redirect(url_for("account.admin_home") + "#feedback")
+    return redirect(url_for("account.admin_home", tab="feedback"))
