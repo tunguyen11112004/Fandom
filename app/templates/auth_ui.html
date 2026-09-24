@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>FanHubPlus Auth</title>
+  <style>
+    body { font-family: sans-serif; max-width: 640px; margin: 32px auto; }
+    label { display: block; margin-top: 10px; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; }
+    button { margin-top: 12px; margin-right: 8px; padding: 8px 12px; }
+    pre { background: #111; color: #eee; padding: 12px; overflow: auto; white-space: pre-wrap; }
+    section { border: 1px solid #ddd; padding: 16px; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <h1>FanHubPlus — đăng ký / đăng nhập</h1>
+  <p>API prefix: <code>{{ api_prefix }}/auth</code></p>
+
+  <section>
+    <h2>Đăng ký</h2>
+    <label>Tên <input id="name" value="Nguyen Van A" /></label>
+    <label>Email <input id="reg_email" value="a@example.com" /></label>
+    <label>Mật khẩu <input id="reg_password" value="Matkhau1" /></label>
+    <button type="button" id="btn-register">POST /register</button>
+  </section>
+
+  <section>
+    <h2>Xác minh email</h2>
+    <label>Token <input id="verify_token" /></label>
+    <button type="button" id="btn-verify">GET /verify-email</button>
+  </section>
+
+  <section>
+    <h2>Đăng nhập</h2>
+    <label>Email <input id="login_email" value="admin@fanhubplus.com" /></label>
+    <label>Mật khẩu <input id="login_password" value="Admin123!" /></label>
+    <button type="button" id="btn-login">POST /login</button>
+    <button type="button" id="btn-admin">POST /admin/login</button>
+    <button type="button" id="btn-me">GET /me</button>
+  </section>
+
+  <h2>Kết quả</h2>
+  <pre id="out">Sẵn sàng.</pre>
+  <script>
+    const prefix = {{ api_prefix|tojson }} + "/auth";
+    const out = document.getElementById("out");
+    let access = "";
+
+    async function call(method, path, body) {
+      const opts = { method, headers: {} };
+      if (body) {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(body);
+      }
+      if (access) opts.headers["Authorization"] = "Bearer " + access;
+      const res = await fetch(prefix + path, opts);
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = text; }
+      if (data && data.data && data.data.access_token) access = data.data.access_token;
+      if (data && data.data && data.data.debug_verify_token) {
+        document.getElementById("verify_token").value = data.data.debug_verify_token;
+      }
+      out.textContent = res.status + " " + res.url + "\n" + JSON.stringify(data, null, 2);
+    }
+
+    document.getElementById("btn-register").onclick = () => call("POST", "/register", {
+      name: document.getElementById("name").value,
+      email: document.getElementById("reg_email").value,
+      password: document.getElementById("reg_password").value,
+      password_confirm: document.getElementById("reg_password").value
+    });
+    document.getElementById("btn-verify").onclick = () => {
+      const token = document.getElementById("verify_token").value;
+      return call("GET", "/verify-email?token=" + encodeURIComponent(token));
+    };
+    document.getElementById("btn-login").onclick = () => call("POST", "/login", {
+      email: document.getElementById("login_email").value,
+      password: document.getElementById("login_password").value
+    });
+    document.getElementById("btn-admin").onclick = () => call("POST", "/admin/login", {
+      email: document.getElementById("login_email").value,
+      password: document.getElementById("login_password").value
+    });
+    document.getElementById("btn-me").onclick = () => call("GET", "/me");
+  </script>
+</body>
+</html>
