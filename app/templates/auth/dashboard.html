@@ -104,6 +104,7 @@
                   <span>Saved item</span>
                 {% endif %}
               </div>
+              {% if row.note %}<p>{{ row.note }}</p>{% endif %}
             </li>
           {% endfor %}
         </ul>
@@ -127,7 +128,7 @@
               </div>
               {% if row.status == 'rejected' and row.reject_reason %}<p>{{ row.reject_reason }}</p>{% endif %}
               {% if row.status == 'rejected' %}
-                <p><a href="{{ url_for('account.submissions') }}">Revise and send it again</a></p>
+                <p><a href="{{ url_for('account.submissions', edit=row.id) }}">Revise and send it again</a></p>
               {% endif %}
             </li>
           {% endfor %}

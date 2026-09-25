@@ -1,4 +1,6 @@
+import shutil
 from datetime import date, datetime
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,7 @@ from app.models import (
     ChatbotFaq,
     Content,
     ContentGenre,
+    ContentTimelineEntry,
     Event,
     Fandom,
     Genre,
@@ -591,6 +594,259 @@ def seed_demo_users(session: Session) -> None:
         admin.password_hash = admin_hash
         if admin.email_verified_at is None:
             admin.email_verified_at = utcnow()
+    session.commit()
+
+
+def seed_detail_gaps(session: Session) -> None:
+    """Fill missing series, characters, merch, and event copy on a database that already has rows."""
+    from app.series import CATALOG_SLUGS, IMAGES, SERIES
+
+    catalog_dir = Path("app/static/images/catalog")
+    series_dir = Path("app/static/images/series")
+    catalog_dir.mkdir(parents=True, exist_ok=True)
+    for name, filename in IMAGES.items():
+        slug = CATALOG_SLUGS.get(name)
+        if not slug:
+            continue
+        source = series_dir / filename
+        target = catalog_dir / f"{slug}.jpg"
+        if source.is_file() and not target.is_file():
+            shutil.copyfile(source, target)
+
+    by_name = {row["name"]: row for row in SERIES}
+    cats = {row.slug: row for row in session.query(Category).all()}
+    anime = cats.get("anime")
+    manga = cats.get("manga")
+    shelf_for = {
+        "One Piece": manga,
+        "Chainsaw Man": manga,
+    }
+
+    def fandom_for(name: str, category: Category | None, blurb: str) -> Fandom | None:
+        if category is None:
+            return None
+        slug = CATALOG_SLUGS[name]
+        row = session.query(Fandom).filter_by(slug=slug).first()
+        if row is None:
+            row = Fandom(
+                category_id=category.category_id,
+                name=name,
+                slug=slug,
+                description=blurb[:500],
+                cover_url=f"{slug}.jpg",
+                is_active=True,
+            )
+            session.add(row)
+            session.flush()
+        elif not row.description:
+            row.description = blurb[:500]
+        return row
+
+    for name, slug in CATALOG_SLUGS.items():
+        facts = by_name.get(name)
+        if facts is None:
+            continue
+        category = shelf_for.get(name) or anime
+        fan = fandom_for(name, category, facts["about"])
+        body = (
+            f"{facts['about']}\n\n"
+            f"{facts['note']} {facts['creator']} began it in {facts['year']}. "
+            f"It lives here as a {facts['kind']} entry under {facts['genre']}, "
+            "with the year, the shelf, and a place to rate or bookmark it."
+        )
+        row = session.query(Content).filter_by(slug=slug).first()
+        if row is None:
+            if category is None:
+                continue
+            row = Content(
+                category_id=category.category_id,
+                fandom_id=fan.fandom_id if fan else None,
+                title=name,
+                slug=slug,
+                type="article",
+                summary=facts["about"][:500],
+                description=facts["note"][:500],
+                body=body,
+                thumbnail_url=f"{slug}.jpg",
+                source_name=facts["creator"],
+                release_date=date(facts["year"], 1, 1),
+                popularity_score=80,
+                status="published",
+                rights_confirmed=True,
+            )
+            session.add(row)
+            session.flush()
+            session.add(ContentGenre(content_id=row.content_id, genre_id=_genre_row(session, facts["genre"]).genre_id))
+        else:
+            if "\n\n" not in (row.body or "") and len(row.body or "") < 520:
+                row.body = f"{row.body}\n\n{facts['about']} {facts['note']}"
+            if not row.thumbnail_url:
+                row.thumbnail_url = f"{slug}.jpg"
+            if row.fandom_id is None and fan is not None:
+                row.fandom_id = fan.fandom_id
+            if row.release_date is None:
+                row.release_date = date(facts["year"], 1, 1)
+            if not row.source_name:
+                row.source_name = facts["creator"]
+            if not row.genre_links:
+                session.add(ContentGenre(content_id=row.content_id, genre_id=_genre_row(session, facts["genre"]).genre_id))
+
+    characters = [
+        ("Monkey D. Luffy", "Straw Hat", "one-piece", "The captain who treats a crew like family and a sea route like a promise. He wants the One Piece, and he will pick a fight with the world government to keep his friends."),
+        ("Tanjiro Kamado", "Demon Slayer", "demon-slayer", "A kind older brother who joined the Corps after his family was killed. He still believes Nezuko can come back, and he fights like that hope is a weapon."),
+        ("Link", "Hero of Hyrule", "breath-of-the-wild", "The quiet hero who wakes up with a broken memory and a kingdom already in trouble. The page is a place to remember the journey, not a walkthrough."),
+        ("Chihiro", "Sen", "spirited-away", "A girl who walks into a spirit bathhouse and has to work her way back to her own name. The story is about courage that looks small until it isn't."),
+        ("Naruto Uzumaki", "Hokage", "naruto", "The loud ninja of the Hidden Leaf, carrying a sealed fox and a promise to be recognized. Sasuke is the rival he refuses to give up on."),
+        ("Satoru Gojo", "Strongest", "jujutsu-kaisen", "The sorcerer who treats a deadly job like a joke until the moment he doesn't. Students orbit him because he is both a shield and a problem."),
+        ("Eren Yeager", "Attack Titan", "attack-on-titan", "A boy who watched a wall fall and decided the world outside was something he had to reach, then something he had to answer for."),
+        ("Izuku Midoriya", "Deku", "my-hero-academia", "The kid born without a quirk who inherits one that can break him. He writes notes on every hero he meets and tries to live up to them."),
+        ("Denji", "Chainsaw Man", "chainsaw-man", "A devil hunter who wanted a normal life and got a chainsaw heart instead. The story keeps asking what he is willing to trade for a simple wish."),
+        ("Anya Forger", "Test subject", "spy-x-family", "The mind-reading child holding a fake family together because she wants to stay. Most of the comedy is her knowing what the adults will not say."),
+        ("Son Goku", "Kakarot", "dragon-ball", "A fighter who keeps meeting a stronger opponent and treating that as good news. The long run is tournaments, wishes, and a crew that refuses to stay down."),
+        ("Ichigo Kurosaki", "Soul Reaper", "bleach", "A teenager who can see spirits and then has to protect both towns, the living one and the one after it."),
+        ("Gon Freecss", "Hunter", "hunter-x-hunter", "A boy who leaves home to find his father and learns the exam is only the first door. Friendship here is real, and so is the cost."),
+        ("Light Yagami", "Kira", "death-note", "A student who picks up a notebook that kills and decides he should rewrite the world. The chase with L is the point of the page."),
+        ("Frieren", "Elf mage", "frieren", "An elf who outlives the hero's party and only later understands what the journey meant. The story moves slowly on purpose."),
+        ("Momo Ayase", "Dandadan", "dandadan", "A girl who believes in ghosts, teams up with a boy who believes in aliens, and finds out both were right."),
+    ]
+    for name, alias, slug, bio in characters:
+        fan = session.query(Fandom).filter_by(slug=slug).first()
+        content = session.query(Content).filter_by(slug=slug).first()
+        category_id = fan.category_id if fan else (content.category_id if content else None)
+        if category_id is None or anime is None:
+            category_id = anime.category_id if anime else None
+        if category_id is None:
+            continue
+        row = session.query(CharacterProfile).filter_by(name=name).first()
+        portrait = f"{slug}.jpg"
+        if row is None:
+            session.add(
+                CharacterProfile(
+                    category_id=category_id,
+                    fandom_id=fan.fandom_id if fan else None,
+                    name=name,
+                    alias=alias,
+                    bio=bio,
+                    image_url=portrait,
+                )
+            )
+        else:
+            if len(row.bio or "") < 160:
+                row.bio = bio
+            if not row.alias:
+                row.alias = alias
+            if not row.image_url:
+                row.image_url = portrait
+            if row.fandom_id is None and fan is not None:
+                row.fandom_id = fan.fandom_id
+
+    merch_rows = [
+        ("Straw Hat figure (display)", "one-piece", "A display figure of Luffy's hat, filed so fans can see the piece and the fandom it belongs to.\n\nNothing on this page is for sale. The hub only keeps the photo, the tags, and a bookmark if you want it on your desk."),
+        ("Hyrule map print (upcoming)", "breath-of-the-wild", "A print timed with the next map drop. Listed here so fans can watch the date, not buy it.\n\nThe release date sits on the item so the upcoming shelf can show it before the day arrives."),
+        ("Nezuko ribbon pin", "demon-slayer", "A small display pin based on Nezuko's bamboo and ribbon, kept with the Demon Slayer shelf.\n\nIt is a reference piece only. Bookmark it if you want the item nearby while you browse the series."),
+        ("Survey Corps cloak card", "attack-on-titan", "A display card of the Survey Corps wings, stored with the Attack on Titan shelf.\n\nThe page is for looking, tagging, and remembering the series. There is no checkout."),
+        ("Hero notebook", "my-hero-academia", "A notebook-style display piece for Deku's hero notes, filed under My Hero Academia.\n\nUse it as a reference on the shelf. The hub does not take orders."),
+        ("Death Note replica card", "death-note", "A display card that recalls the notebook, without pretending anyone should use one.\n\nIt sits with the Death Note shelf so the merchandise page is not just two items."),
+    ]
+    tags = {row.name: row for row in session.query(Tag).all()}
+    for name, slug, description in merch_rows:
+        fan = session.query(Fandom).filter_by(slug=slug).first()
+        content = session.query(Content).filter_by(slug=slug).first()
+        category_id = fan.category_id if fan else (content.category_id if content else None)
+        if category_id is None:
+            continue
+        row = session.query(MerchandiseItem).filter_by(name=name).first()
+        if row is None:
+            row = MerchandiseItem(
+                category_id=category_id,
+                fandom_id=fan.fandom_id if fan else None,
+                name=name,
+                description=description,
+                image_url=f"{slug}.jpg",
+            )
+            session.add(row)
+            session.flush()
+            if not row.images:
+                session.add(MerchandiseImage(item_id=row.item_id, image_url=f"{slug}.jpg", caption=name, sort_order=0))
+            collectible = tags.get("Collectible")
+            if collectible is not None:
+                session.add(MerchandiseTag(item_id=row.item_id, tag_id=collectible.tag_id))
+        elif len(row.description or "") < 160:
+            row.description = description
+            if not row.image_url:
+                row.image_url = f"{slug}.jpg"
+
+    event_copy = {
+        "Anime Expo": "A large anime convention in Los Angeles, with screenings, guest panels, and exhibitor halls. The ticket link leaves this hub.",
+        "MCM Comic Con": "A London comic convention covering manga, games, and screen guests. Use it to plan a trip, not to buy a badge here.",
+        "Gamescom": "Cologne's games show, listed so players can see the city and the week. Tickets open on the organizer's site.",
+        "Stadium night": "An evening screening and fan gathering in Seoul. No ticket link is on file, so the page only keeps the date and the city.",
+        "Comiket": "Tokyo's doujin market. The listing is a date and a city for fans who already know the halls.",
+    }
+    for title, description in event_copy.items():
+        row = session.query(Event).filter_by(title=title).first()
+        if row is not None and not row.description:
+            row.description = description
+            if not row.venue or row.venue == row.city:
+                row.venue = f"{title} hall"
+            if not row.address:
+                row.address = row.city
+
+    beats = {
+        "one-piece": [
+            (1997, "Manga begins", "Eiichiro Oda starts the Straw Hat voyage."),
+            (1999, "Anime sets sail", "The weekly anime picks up the same crew."),
+            (2024, "Still running", "The story is still the long one fans plan their week around."),
+        ],
+        "naruto": [
+            (1999, "Hidden Leaf", "Naruto Uzumaki starts as the village outcast who wants to be Hokage."),
+            (2002, "Anime run", "The series moves from the academy into the bigger ninja wars."),
+            (2017, "Next generation", "Boruto continues after the original run."),
+        ],
+        "demon-slayer": [
+            (2016, "The Corps", "Tanjiro joins the Demon Slayer Corps for Nezuko."),
+            (2019, "Anime breakout", "The fight animation carries the story past the manga crowd."),
+            (2020, "Mugen Train", "The film becomes the event fans still quote."),
+        ],
+        "attack-on-titan": [
+            (2009, "The walls", "The manga opens on a city that thinks the outside is gone."),
+            (2013, "Anime premiere", "The first season turns every opening into a clue."),
+            (2023, "Final season", "The ending is the beat people still argue about."),
+        ],
+        "jujutsu-kaisen": [
+            (2018, "Curses", "Yuji swallows a finger and the school year gets worse."),
+            (2020, "Anime", "The openings and fights travel faster than the chapters."),
+            (2023, "Shibuya", "The story stops treating the strongest as untouchable."),
+        ],
+        "spirited-away": [
+            (2001, "Release", "Chihiro walks into the bathhouse and loses her name."),
+            (2003, "Academy Award", "The film becomes the one people still recommend first."),
+            (2020, "Still quoted", "Fans keep the bathhouse as the growing-up story."),
+        ],
+        "death-note": [
+            (2003, "The notebook", "Light Yagami picks up a book that kills."),
+            (2006, "Anime", "The chase with L becomes the version most people meet first."),
+            (2017, "New adaptations", "The idea keeps getting retold, and the original chase stays the reference."),
+        ],
+        "frieren": [
+            (2020, "After the quest", "The elf mage starts the story once the demon king is already gone."),
+            (2023, "Anime", "The slow pace is the point, and the series finds a wide audience anyway."),
+        ],
+    }
+    for slug, rows in beats.items():
+        content = session.query(Content).filter_by(slug=slug).first()
+        if content is None or content.timeline:
+            continue
+        for order, (year, title, description) in enumerate(rows):
+            session.add(
+                ContentTimelineEntry(
+                    content_id=content.content_id,
+                    entry_date=date(year, 1, 1),
+                    title=title,
+                    description=description,
+                    sort_order=order,
+                )
+            )
     session.commit()
 
 

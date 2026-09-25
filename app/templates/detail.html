@@ -54,8 +54,8 @@
       <form class="bookmark-bar" method="post" action="{{ url_for('account.rate', slug=item.slug) }}">
         <label for="score">Your rating</label>
         <select id="score" name="score">
-          {% for n in range(1,6) %}
-            <option value="{{ n }}" {% if my_score == n %}selected{% endif %}>{{ n }} star{% if n != 1 %}s{% endif %}</option>
+          {% for n in range(5, 0, -1) %}
+            <option value="{{ n }}" {% if (my_score or 5) == n %}selected{% endif %}>{{ n }} star{% if n != 1 %}s{% endif %}</option>
           {% endfor %}
         </select>
         <button type="submit">{% if my_score %}Update rating{% else %}Rate this{% endif %}</button>
@@ -76,18 +76,44 @@
       {% endif %}
       <button type="button" class="button ghost" id="copy-link">Copy link</button>
     </form>
-    {% if embed_src %}
+    {% if player == 'youtube' %}
       <div class="embed-frame">
-        <iframe src="{{ embed_src }}" title="{{ item.title }} player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+        <iframe src="{{ media_src }}" title="{{ item.title }} player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
         {% if item.source_name %}<p class="media-note">Source: {{ item.source_name }}</p>{% endif %}
       </div>
-    {% elif item.embed_url %}
-      <p class="media-note"><a href="{{ item.embed_url }}" target="_blank" rel="noreferrer">Open the embedded media</a></p>
+    {% elif player == 'video' %}
+      <div class="embed-frame">
+        <video src="{{ media_src }}" controls playsinline preload="metadata"></video>
+      </div>
+    {% elif player == 'audio' %}
+      <div class="embed-frame audio">
+        <audio src="{{ media_src }}" controls preload="metadata"></audio>
+      </div>
+    {% elif player == 'link' %}
+      <p class="media-note"><a href="{{ media_src }}" target="_blank" rel="noreferrer">Open the media</a></p>
     {% endif %}
     <div class="body-copy">
-      <p>{{ item.body }}</p>
+      {% for paragraph in (item.body or '').split('\n\n') %}
+        {% if paragraph.strip() %}<p>{{ paragraph.strip() }}</p>{% endif %}
+      {% endfor %}
     </div>
-    {% if item.content_type != "article" and not embed_src %}
+    {% if timeline %}
+      <section class="story-timeline">
+        <h2>Timeline</h2>
+        <ol class="timeline">
+          {% for entry in timeline %}
+            <li>
+              {% if entry.entry_date %}<time datetime="{{ entry.entry_date.isoformat() }}">{{ entry.entry_date.year }}</time>{% endif %}
+              <div>
+                <strong>{{ entry.title }}</strong>
+                {% if entry.description %}<p>{{ entry.description }}</p>{% endif %}
+              </div>
+            </li>
+          {% endfor %}
+        </ol>
+      </section>
+    {% endif %}
+    {% if item.content_type != "article" and not player %}
       <aside class="media-note">
         <h2>{{ item.content_type|capitalize }} shelf</h2>
         <p>Playback uses an official embed when a source is on file. If the player fails, <a href="{{ url_for('account.feedback') }}">report it</a>.</p>

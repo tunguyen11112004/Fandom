@@ -4,9 +4,13 @@
 {% block content %}
 <section class="auth-panel desk-panel">
   <p class="kicker">Fan desk</p>
-  <h1>Send something in</h1>
-  <p>It stays pending until an admin publishes it or sends it back with a reason.</p>
-  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
+  {% if edit %}
+    <h1>Revise this piece</h1>
+    <p>The fields below are the piece that was sent back{% if edit.reject_reason %}: {{ edit.reject_reason }}{% else %}.{% endif %} Change what you need, then send it again.</p>
+  {% else %}
+    <h1>Send something in</h1>
+    <p>It stays pending until an admin publishes it or sends it back with a reason.</p>
+  {% endif %}
   {% if mine %}
   <ul class="desk-list">
     {% for row in mine %}
@@ -14,36 +18,63 @@
         <strong>{{ row.title }}</strong>
         <span class="chip">{{ row.status }}</span>
         {% if row.status == 'rejected' %}
-          <a href="{{ url_for('account.submissions', edit=row.id) }}">Revise</a>
+          <a href="{{ url_for('account.submissions', edit=row.id) }}#desk-form">Revise</a>
           {% if row.reject_reason %}<p>{{ row.reject_reason }}</p>{% endif %}
         {% endif %}
       </li>
     {% endfor %}
   </ul>
   {% endif %}
-  <form method="post" class="desk-form">
+  {% if edit %}<p class="auth-links"><a href="{{ url_for('account.submissions', new=1) }}">Start a blank piece</a></p>{% endif %}
+  <form id="desk-form" method="post" class="desk-form" enctype="multipart/form-data">
     {% if edit %}<input type="hidden" name="submission_id" value="{{ edit.id }}" />{% endif %}
     <label for="title">Title</label>
     <input id="title" name="title" required maxlength="200" value="{{ edit.title if edit else '' }}" />
     <label for="category_id">Category</label>
     <select id="category_id" name="category_id" required>
       {% for category in categories %}
-        <option value="{{ category.id }}">{{ category.name }}</option>
+        <option value="{{ category.id }}" {% if edit and edit.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+      {% endfor %}
+    </select>
+    <label for="fandom_id">Fandom</label>
+    <select id="fandom_id" name="fandom_id" required>
+      <option value="">Choose a fandom</option>
+      {% for fan in fandoms %}
+        <option value="{{ fan.fandom_id }}" {% if edit and edit.fandom_id == fan.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
       {% endfor %}
     </select>
     <label for="content_type">Type</label>
     <select id="content_type" name="content_type">
-      <option value="article">Article</option>
-      <option value="image">Image</option>
-      <option value="video">Video</option>
-      <option value="profile">Character note</option>
+      {% for kind, label in [('article', 'Article'), ('image', 'Image'), ('video', 'Video'), ('audio', 'Audio'), ('profile', 'Character note')] %}
+        <option value="{{ kind }}" {% if edit and edit.content_type == kind %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
     </select>
     <label for="body">The piece</label>
     <textarea id="body" name="body" rows="6" required>{{ edit.body if edit else '' }}</textarea>
-    <label for="media_url">Image or media link, optional</label>
-    <input id="media_url" name="media_url" type="url" placeholder="https://" />
+    <div class="media-slot" data-media="image" hidden>
+      <label for="image-url">Image link
+        <input id="image-url" name="media_url" type="url" placeholder="https://" value="{{ edit.media_url if edit and edit.content_type == 'image' else '' }}" />
+      </label>
+    </div>
+    <div class="media-slot" data-media="video" hidden>
+      <label for="video-url">Video link
+        <input id="video-url" name="media_url" type="url" placeholder="https://www.youtube.com/watch?v=..." value="{{ edit.media_url if edit and edit.content_type == 'video' and edit.media_url and edit.media_url.startswith('http') else '' }}" />
+      </label>
+      <label for="video-file">Or upload a video
+        <input id="video-file" name="media_file" type="file" accept=".mp4,.webm,video/*" />
+      </label>
+    </div>
+    <div class="media-slot" data-media="audio" hidden>
+      <label for="audio-url">Audio link
+        <input id="audio-url" name="media_url" type="url" placeholder="https://example.com/track.mp3" value="{{ edit.media_url if edit and edit.content_type == 'audio' and edit.media_url and edit.media_url.startswith('http') else '' }}" />
+      </label>
+      <label for="audio-file">Or upload an audio file
+        <input id="audio-file" name="media_file" type="file" accept=".mp3,.wav,.m4a,.ogg,audio/*" />
+      </label>
+    </div>
     <label class="check"><input type="checkbox" name="rights" value="yes" required /> I have the right to share this.</label>
-    <button type="submit">Send for review</button>
+    {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">{% if edit %}Send the revision{% else %}Send for review{% endif %}</button>
   </form>
   <p class="auth-links"><a href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
 </section>

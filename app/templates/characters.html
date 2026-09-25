@@ -1,43 +1,58 @@
 {% extends "base.html" %}
 {% block title %}Characters · Fan Hub Plus{% endblock %}
-{% block body_class %}stack-anime{% endblock %}
+{% block body_class %}cast-room{% endblock %}
 {% block content %}
-  <header class="page-head">
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('main.home') }}">Home</a>
-      <span aria-hidden="true">/</span>
-      <span aria-current="page">Characters</span>
-    </nav>
-    <h1>Character profiles</h1>
-    <p>Cards from the fandoms on the hub. Open a name for the bio and related titles.</p>
-  </header>
-  <form class="filters" method="get">
-    <div>
-      <label for="category">Category</label>
-      <select id="category" name="category">
-        <option value="">All categories</option>
-        {% for cat in categories %}
-          <option value="{{ cat.slug }}" {% if category == cat.slug %}selected{% endif %}>{{ cat.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="filter-actions"><button type="submit">Filter</button></div>
-  </form>
-  {% if cards %}
-    <ul class="card-grid">
-      {% for card in cards %}
-        <li>
-          <a class="content-card" href="{{ url_for('main.character_detail', character_id=card.row.character_id) }}">
-            <div class="card-copy">
-              <span class="type">{% if card.fandom %}{{ card.fandom.name }}{% else %}{{ card.category.name if card.category else 'Character' }}{% endif %}</span>
-              <h2>{{ card.row.name }}</h2>
-              <p>{{ card.row.bio }}</p>
-            </div>
-          </a>
-        </li>
+  <section class="cast">
+    <header class="cast-head">
+      <div>
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="{{ url_for('main.home') }}">Home</a>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">Characters</span>
+        </nav>
+        <h1>The cast</h1>
+        <p>Portraits grouped by fandom. Open a face for the bio.</p>
+      </div>
+      <form method="get">
+        {% if fandom %}<input type="hidden" name="fandom" value="{{ fandom }}" />{% endif %}
+        <label for="category">Shelf</label>
+        <select id="category" name="category" onchange="this.form.requestSubmit()">
+          <option value="">All shelves</option>
+          {% for cat in categories %}
+            <option value="{{ cat.slug }}" {% if category == cat.slug %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </header>
+    <nav class="cast-chips" aria-label="Fandom">
+      <a href="{{ url_for('main.characters', category=category) }}" {% if not fandom %}aria-current="page"{% endif %}>All</a>
+      {% for fan in fandoms %}
+        <a href="{{ url_for('main.characters', category=category, fandom=fan.slug) }}" {% if fandom == fan.slug %}aria-current="page"{% endif %}>{{ fan.name }}</a>
       {% endfor %}
-    </ul>
-  {% else %}
-    <p class="empty">No character cards match that filter.</p>
-  {% endif %}
+    </nav>
+    {% if groups %}
+      {% for group in groups %}
+        <section class="cast-band">
+          <h2>{{ group.label }}</h2>
+          <ul class="cast-row">
+            {% for card in group['items'] %}
+              <li>
+                <a class="cast-tile" href="{{ url_for('main.character_detail', character_id=card.row.character_id) }}">
+                  {% if card.row.image_url %}
+                    <img src="{{ url_for('static', filename='images/catalog/' + card.row.image_url) }}" alt="" />
+                  {% else %}
+                    <span class="cast-blank" aria-hidden="true">{{ card.row.name[:1] }}</span>
+                  {% endif %}
+                  <strong>{{ card.row.name }}</strong>
+                  {% if card.row.alias %}<small>{{ card.row.alias }}</small>{% endif %}
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endfor %}
+    {% else %}
+      <p class="empty">No character cards match that filter.</p>
+    {% endif %}
+  </section>
 {% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{% if now %}{{ now.title }} · {% endif %}Media · Fan Hub Plus{% endblock %}
+{% block body_class %}media-room{% endblock %}
+{% block content %}
+  <section class="watch">
+    <div class="watch-stage">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="{{ url_for('main.home') }}">Home</a>
+        <span aria-hidden="true">/</span>
+        {% if now and request.view_args.get('slug') %}
+          <a href="{{ url_for('main.media_center') }}">Media</a>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">{{ now.title }}</span>
+        {% else %}
+          <span aria-current="page">Media</span>
+        {% endif %}
+      </nav>
+      {% if now %}
+        <div class="watch-screen">
+          {% if player == 'youtube' %}
+            <div class="embed-frame">
+              <iframe src="{{ media_src }}" title="{{ now.title }} player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+          {% elif player == 'video' %}
+            <div class="embed-frame">
+              <video src="{{ media_src }}" controls playsinline preload="metadata"></video>
+            </div>
+          {% elif player == 'audio' %}
+            {% if now.image_path %}
+              <img class="watch-poster" src="{{ url_for('static', filename='images/catalog/' + now.image_path) }}" alt="" />
+            {% endif %}
+            <div class="embed-frame audio">
+              <audio src="{{ media_src }}" controls preload="metadata"></audio>
+            </div>
+          {% elif player == 'link' %}
+            <p class="watch-missing"><a href="{{ media_src }}" target="_blank" rel="noreferrer">Open this file</a></p>
+          {% elif now.image_path %}
+            <img class="watch-poster" src="{{ url_for('static', filename='images/catalog/' + now.image_path) }}" alt="{{ now.title }}" />
+          {% endif %}
+          {% if now.content_type != 'image' and not player %}
+            <p class="watch-missing">No file is attached to this title yet. Add a link or upload from the admin desk.</p>
+          {% endif %}
+        </div>
+        <p class="watch-kind">{{ now.content_type }}</p>
+        <h1>{{ now.title }}</h1>
+        <p class="watch-summary">{{ now.summary }}</p>
+        {% if now.tags %}<p class="watch-tags">{{ now.tags }}</p>{% endif %}
+        {% if rating and rating.avg_score %}<p class="watch-score">{{ rating.avg_score }} / 5 · {{ rating.rating_count }} rating{% if rating.rating_count != 1 %}s{% endif %}</p>{% endif %}
+        <div class="watch-actions">
+          {% if current_user and current_user.is_member %}
+            <form method="post" action="{{ url_for('account.rate', slug=now.slug) }}">
+              <input type="hidden" name="next" value="{{ url_for('main.media_center', slug=now.slug) }}" />
+              <label for="score">Rate</label>
+              <select id="score" name="score">
+                {% for n in range(5, 0, -1) %}
+                  <option value="{{ n }}" {% if (my_score or 5) == n %}selected{% endif %}>{{ n }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">Save</button>
+            </form>
+          {% else %}
+            <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to rate</a>
+          {% endif %}
+          <a href="{{ url_for('main.content_detail', slug=now.slug) }}">Read the shelf page</a>
+        </div>
+      {% else %}
+        <h1>Media</h1>
+        <p class="watch-summary">Nothing playable is on the shelf yet.</p>
+      {% endif %}
+    </div>
+    <aside class="watch-list" aria-label="Playlist">
+      <h2>Playlist</h2>
+      {% for group in groups %}
+        <p class="watch-label">{{ group.label }}</p>
+        <ul>
+          {% for item in group['items'] %}
+            <li>
+              <a class="{% if now and now.slug == item.slug %}is-on{% endif %}" href="{{ url_for('main.media_center', slug=item.slug) }}">
+                {% if item.image_path %}
+                  <img src="{{ url_for('static', filename='images/catalog/' + item.image_path) }}" alt="" />
+                {% endif %}
+                <span>
+                  <strong>{{ item.title }}</strong>
+                  <small>{{ item.content_type }}</small>
+                </span>
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endfor %}
+    </aside>
+  </section>
+{% endblock %}

@@ -1,11 +1,11 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
 from sqlalchemy import and_, func, or_
 
 from .account import current_user
-from .events import haversine_km, pin_style
+from .events import haversine_km
 from .extensions import db
 from .models import (
     ActivityLog,
@@ -16,6 +16,7 @@ from .models import (
     ChatbotQuery,
     Content,
     ContentGenre,
+    ContentRating,
     Event,
     Fandom,
     Genre,
@@ -23,7 +24,7 @@ from .models import (
     MerchandiseTag,
     Tag,
 )
-from .news import news_items
+from .news import featured_worlds, news_items
 from .popularity import refresh_content_popularity
 from .serialize import rating_summary
 from .series import hottest
@@ -51,6 +52,8 @@ def _apply_filters(query, args):
     year = args.get("year", "").strip()
     content_type = args.get("type", "").strip()
     popularity = args.get("popularity", "").strip()
+    fandom = args.get("fandom", "").strip()
+    featured = args.get("featured", "").strip()
 
     query = query.filter(Content.status == "published")
     if q:
@@ -74,8 +77,35 @@ def _apply_filters(query, args):
     if popularity in POPULARITY_BANDS:
         low, high = POPULARITY_BANDS[popularity]
         query = query.filter(Content.popularity_score.between(low, high))
+    if fandom:
+        query = query.join(Fandom, Fandom.fandom_id == Content.fandom_id).filter(Fandom.slug == fandom, Fandom.is_active.is_(True))
+    if featured == "yes":
+        query = query.filter(Content.is_featured.is_(True))
 
     return query
+
+
+def _explore_chips(filters, sort):
+    labels = {
+        "q": filters["q"],
+        "category": filters["category"],
+        "genre": filters["genre"],
+        "year": filters["year"],
+        "type": filters["type"],
+        "popularity": filters["popularity"],
+        "fandom": filters["fandom"],
+        "featured": "Featured" if filters["featured"] == "yes" else "",
+        "sort": SORTS.get(sort, "") if sort != "latest" else "",
+    }
+    chips = []
+    for key, label in labels.items():
+        if not label:
+            continue
+        kept = {name: value for name, value in filters.items() if value and name != key}
+        if key != "sort" and sort != "latest":
+            kept["sort"] = sort
+        chips.append({"label": label, "href": url_for("main.explore", **kept)})
+    return chips
 
 
 def _apply_sort(query, sort):
@@ -97,7 +127,7 @@ def home():
         categories=categories,
         counts=counts,
         total=Content.query.filter_by(status="published").count(),
-        headlines=news_items()[:4],
+        headlines=news_items(limit=4),
         hottest=hottest(limit=None),
     )
 
@@ -124,6 +154,8 @@ def _guest_advanced(args, viewer):
             args.get("genre", "").strip(),
             args.get("year", "").strip(),
             args.get("popularity", "").strip(),
+            args.get("fandom", "").strip(),
+            args.get("featured", "").strip() == "yes",
             sort not in ("", "latest"),
         ]
     )
@@ -171,6 +203,17 @@ def explore():
     if active_category:
         match = Category.query.filter_by(slug=active_category).first()
         category_name = match.name if match else None
+    fandoms = Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all()
+    filters = {
+        "q": request.args.get("q", "").strip(),
+        "category": active_category,
+        "genre": request.args.get("genre", "").strip(),
+        "year": request.args.get("year", "").strip(),
+        "type": request.args.get("type", "").strip(),
+        "popularity": request.args.get("popularity", "").strip(),
+        "fandom": request.args.get("fandom", "").strip(),
+        "featured": request.args.get("featured", "").strip(),
+    }
 
     return render_template(
         "explore.html",
@@ -178,16 +221,12 @@ def explore():
         categories=categories,
         genres=genres,
         years=years,
+        fandoms=fandoms,
+        content_types=("article", "video", "audio", "image", "trailer", "explainer"),
         sorts=SORTS,
         sort=sort,
-        filters={
-            "q": request.args.get("q", "").strip(),
-            "category": active_category,
-            "genre": request.args.get("genre", "").strip(),
-            "year": request.args.get("year", "").strip(),
-            "type": request.args.get("type", "").strip(),
-            "popularity": request.args.get("popularity", "").strip(),
-        },
+        filters=filters,
+        chips=_explore_chips(filters, sort),
         category_name=category_name,
         shelf=hottest(limit=None) if active_category in {"anime", "manga"} else [],
         can_filter=viewer is not None and (viewer.is_member or viewer.role == "admin"),
@@ -231,6 +270,8 @@ def content_detail(slug):
         .limit(3)
         .all()
     )
+    player, media_src = _media_player(item)
+    timeline = sorted(item.timeline, key=lambda row: (row.sort_order, row.entry_date or date.min))
     return render_template(
         "detail.html",
         item=item,
@@ -238,7 +279,68 @@ def content_detail(slug):
         saved=saved,
         rating=rating_summary(db.session, item.content_id),
         my_score=my_score,
-        embed_src=_embed_src(item.embed_url),
+        player=player,
+        media_src=media_src,
+        timeline=timeline,
+    )
+
+
+@bp.route("/media")
+@bp.route("/media/<slug>")
+def media_center(slug=None):
+    kinds = ("video", "trailer", "explainer", "audio", "image")
+    labels = {
+        "video": "Video",
+        "trailer": "Trailers",
+        "explainer": "Explainers",
+        "audio": "Audio",
+        "image": "Image sets",
+    }
+    rows = (
+        Content.query.filter(Content.status == "published", Content.type.in_(kinds))
+        .order_by(Content.release_date.desc(), Content.title.asc())
+        .all()
+    )
+    groups = []
+    for kind in kinds:
+        shelf = [row for row in rows if row.type == kind]
+        if shelf:
+            groups.append({"kind": kind, "label": labels[kind], "items": shelf})
+    now = None
+    if slug:
+        now = next((row for row in rows if row.slug == slug), None)
+        if now is None:
+            abort(404)
+        now.view_count = (now.view_count or 0) + 1
+        refresh_content_popularity(db.session, now.content_id)
+        viewer = current_user()
+        if viewer is not None and viewer.is_member:
+            db.session.add(
+                ActivityLog(
+                    user_id=viewer.user_id,
+                    action="view",
+                    entity_type="content",
+                    entity_id=now.content_id,
+                    details=f"Played {now.title}"[:255],
+                )
+            )
+        db.session.commit()
+    elif groups:
+        now = groups[0]["items"][0]
+    player, media_src = _media_player(now) if now is not None else (None, None)
+    my_score = None
+    viewer = current_user()
+    if now is not None and viewer is not None and viewer.is_member:
+        rated = ContentRating.query.filter_by(user_id=viewer.user_id, content_id=now.content_id).first()
+        my_score = rated.score if rated else None
+    return render_template(
+        "media.html",
+        groups=groups,
+        now=now,
+        player=player,
+        media_src=media_src,
+        my_score=my_score,
+        rating=rating_summary(db.session, now.content_id) if now is not None else None,
     )
 
 
@@ -247,16 +349,37 @@ def _embed_src(url):
         return None
     if "watch?v=" in url:
         return url.replace("watch?v=", "embed/")
+    if "youtu.be/" in url:
+        video_id = url.split("youtu.be/")[-1].split("?")[0]
+        return f"https://www.youtube.com/embed/{video_id}"
+    if "youtube.com/shorts/" in url:
+        video_id = url.split("shorts/")[-1].split("?")[0]
+        return f"https://www.youtube.com/embed/{video_id}"
     return url
+
+
+def _media_player(item):
+    url = (item.embed_url or item.media_url or "").strip()
+    if not url or url.lower() == "none":
+        return None, None
+    lower = url.lower().split("?")[0]
+    if "youtu.be/" in url or "youtube.com" in url or "youtube-nocookie.com" in url:
+        return "youtube", _embed_src(url)
+    if lower.endswith((".mp3", ".wav", ".m4a", ".ogg")) or item.type == "audio":
+        return "audio", url
+    if lower.endswith((".mp4", ".webm")) or item.type in {"video", "trailer", "explainer"}:
+        return "video", url
+    return "link", url
 
 
 @bp.route("/news")
 def news():
+    worlds = featured_worlds()
     world = request.args.get("world", "").strip()
-    if world not in {"anime", "manga"}:
+    if world not in {w["slug"] for w in worlds}:
         world = ""
     items = news_items(world or None)
-    return render_template("news.html", items=items, world=world, total=len(news_items()))
+    return render_template("news.html", items=items, world=world, worlds=worlds)
 
 
 def _chat_session():
@@ -276,7 +399,7 @@ def _chat_session():
     return row
 
 
-def _save_turn(role, message):
+def _save_turn(role, message, faq_id=None):
     chat = _chat_session()
     if role == "user":
         db.session.add(ChatbotQuery(session_id=chat.session_id, message=message, response=None))
@@ -288,8 +411,9 @@ def _save_turn(role, message):
         )
         if last is not None and last.response is None:
             last.response = message
+            last.matched_faq_id = faq_id
         else:
-            db.session.add(ChatbotQuery(session_id=chat.session_id, message="", response=message))
+            db.session.add(ChatbotQuery(session_id=chat.session_id, message="", response=message, matched_faq_id=faq_id))
     db.session.commit()
 
 
@@ -321,7 +445,7 @@ def support_chat():
     _save_turn("user", message)
     answer = reply_to(message, session.get("guide_step", 0))
     session["guide_step"] = answer.get("guide_step", 0)
-    _save_turn("assistant", answer["text"])
+    _save_turn("assistant", answer["text"], answer.get("faq_id"))
     return jsonify(text=answer["text"], links=answer.get("links", []))
 
 
@@ -331,15 +455,56 @@ def sitemap():
     return render_template("sitemap.html", categories=categories)
 
 
+def _map_pins(pins):
+    grouped = {}
+    for pin in pins:
+        if pin["lat"] is None or pin["lng"] is None:
+            continue
+        grouped.setdefault(pin["city"], []).append(pin)
+    markers = []
+    for city, items in grouped.items():
+        markers.append(
+            {
+                "city": city,
+                "lat": items[0]["lat"],
+                "lng": items[0]["lng"],
+                "events": [
+                    {"id": item["id"], "title": item["title"], "when": item["when"], "kind": item["kind"]}
+                    for item in items
+                ],
+            }
+        )
+    return markers
+
+
 @bp.route("/events")
 def events():
     city = request.args.get("city", "").strip()
     event_type = request.args.get("event_type", "").strip()
+    category = request.args.get("category", "").strip()
+    date_from = request.args.get("from", "").strip()
+    date_to = request.args.get("to", "").strip()
     query = Event.query
     if city:
         query = query.filter(Event.city.ilike(city))
     if event_type:
         query = query.filter(Event.event_type == event_type)
+    try:
+        if date_from:
+            query = query.filter(Event.start_at >= datetime.combine(date.fromisoformat(date_from), datetime.min.time()))
+    except ValueError:
+        date_from = ""
+    try:
+        if date_to:
+            query = query.filter(Event.start_at < datetime.combine(date.fromisoformat(date_to) + timedelta(days=1), datetime.min.time()))
+    except ValueError:
+        date_to = ""
+    if category:
+        cat = Category.query.filter_by(slug=category).first()
+        if cat:
+            query = query.filter(Event.category_id == cat.category_id)
+        else:
+            query = query.filter(Event.event_id == 0)
     rows = query.order_by(Event.start_at.asc()).all()
     lat = request.args.get("lat")
     lng = request.args.get("lng")
@@ -358,33 +523,55 @@ def events():
                 "id": row.event_id,
                 "title": row.title,
                 "city": row.city,
+                "venue": row.venue,
+                "description": row.description,
                 "kind": row.event_type,
                 "when": row.start_at.strftime("%d %b %Y") if row.start_at else "",
                 "ticket_url": row.ticket_url,
-                "style": pin_style(row.latitude, row.longitude),
+                "lat": row.latitude,
+                "lng": row.longitude,
                 "distance_km": dist,
             }
         )
     if lat and lng:
         pins.sort(key=lambda item: item["distance_km"] if item["distance_km"] is not None else 10**9)
+    you = None
+    if lat and lng:
+        try:
+            you = {"lat": float(lat), "lng": float(lng)}
+        except ValueError:
+            you = None
     return render_template(
         "events.html",
         events=pins,
+        map_pins=_map_pins(pins),
+        you=you,
         cities=cities,
         types=types,
+        categories=Category.query.order_by(Category.name).all(),
         city=city,
         event_type=event_type,
+        category=category,
+        date_from=date_from,
+        date_to=date_to,
     )
 
 
 @bp.route("/characters")
 def characters():
     category = request.args.get("category", "").strip()
+    fandom = request.args.get("fandom", "").strip()
     query = CharacterProfile.query
     if category:
         cat = Category.query.filter_by(slug=category).first()
         if cat:
             query = query.filter(CharacterProfile.category_id == cat.category_id)
+    if fandom:
+        fan = Fandom.query.filter_by(slug=fandom, is_active=True).first()
+        if fan:
+            query = query.filter(CharacterProfile.fandom_id == fan.fandom_id)
+        else:
+            query = query.filter(CharacterProfile.character_id == 0)
     rows = query.order_by(CharacterProfile.name.asc()).all()
     cats = {c.category_id: c for c in Category.query.all()}
     fans = {f.fandom_id: f for f in Fandom.query.all()}
@@ -393,7 +580,20 @@ def characters():
         cat = cats.get(row.category_id)
         fan = fans.get(row.fandom_id) if row.fandom_id else None
         cards.append({"row": row, "category": cat, "fandom": fan})
-    return render_template("characters.html", cards=cards, categories=Category.query.order_by(Category.name).all(), category=category)
+    grouped = {}
+    for card in cards:
+        label = card["fandom"].name if card["fandom"] else (card["category"].name if card["category"] else "Cast")
+        grouped.setdefault(label, []).append(card)
+    groups = [{"label": label, "items": grouped[label]} for label in sorted(grouped)]
+    return render_template(
+        "characters.html",
+        cards=cards,
+        groups=groups,
+        categories=Category.query.order_by(Category.name).all(),
+        fandoms=Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all(),
+        category=category,
+        fandom=fandom,
+    )
 
 
 @bp.route("/characters/<int:character_id>")
@@ -421,24 +621,54 @@ def character_detail(character_id):
 @bp.route("/merchandise")
 def merchandise():
     category = request.args.get("category", "").strip()
+    fandom = request.args.get("fandom", "").strip()
+    tag = request.args.get("tag", "").strip()
+    upcoming = request.args.get("upcoming", "").strip()
     query = MerchandiseItem.query
     if category:
         cat = Category.query.filter_by(slug=category).first()
         if cat:
             query = query.filter(MerchandiseItem.category_id == cat.category_id)
+    if fandom:
+        fan = Fandom.query.filter_by(slug=fandom, is_active=True).first()
+        if fan:
+            query = query.filter(MerchandiseItem.fandom_id == fan.fandom_id)
+        else:
+            query = query.filter(MerchandiseItem.item_id == 0)
+    if tag:
+        named = Tag.query.filter_by(name=tag).first()
+        if named is None:
+            query = query.filter(MerchandiseItem.item_id == 0)
+        else:
+            query = query.join(MerchandiseTag, MerchandiseTag.item_id == MerchandiseItem.item_id).filter(MerchandiseTag.tag_id == named.tag_id)
+    if upcoming == "yes":
+        query = query.filter(MerchandiseItem.is_upcoming.is_(True))
     rows = query.order_by(MerchandiseItem.name.asc()).all()
     tag_map = {}
     for link in MerchandiseTag.query.all():
         tag = db.session.get(Tag, link.tag_id)
         tag_map.setdefault(link.item_id, []).append(tag.name if tag else "")
     cats = {c.category_id: c for c in Category.query.all()}
-    cards = [{"row": row, "category": cats.get(row.category_id), "tags": [t for t in tag_map.get(row.item_id, []) if t]} for row in rows]
+    fans = {f.fandom_id: f for f in Fandom.query.all()}
+    cards = [
+        {
+            "row": row,
+            "category": cats.get(row.category_id),
+            "fandom": fans.get(row.fandom_id) if row.fandom_id else None,
+            "tags": [t for t in tag_map.get(row.item_id, []) if t],
+        }
+        for row in rows
+    ]
     return render_template(
         "merchandise.html",
         cards=cards,
         categories=Category.query.order_by(Category.name).all(),
+        fandoms=Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all(),
+        tags=Tag.query.order_by(Tag.name).all(),
         category=category,
-        upcoming=False,
+        fandom=fandom,
+        tag=tag,
+        upcoming=upcoming == "yes",
     )
 
 

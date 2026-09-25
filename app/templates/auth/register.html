@@ -5,7 +5,6 @@
 <section class="auth-panel">
   <h1>Become a member</h1>
   <p>Name, email, and a password. We keep the password as a hash, never as plain text.</p>
-  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
   <form method="post">
     <label for="name">Name</label>
     <input id="name" name="name" required autocomplete="name" />
@@ -15,6 +14,7 @@
     <input id="password" name="password" type="password" required autocomplete="new-password" />
     <label for="confirm">Confirm password</label>
     <input id="confirm" name="confirm" type="password" required autocomplete="new-password" />
+    {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Create account</button>
   </form>
   <p class="auth-links"><a href="{{ url_for('account.login') }}">I already have an account</a></p>

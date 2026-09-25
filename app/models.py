@@ -293,11 +293,34 @@ class Content(db.Model):
 
     @property
     def tags(self):
-        return ""
+        if not self.content_id:
+            return ""
+        names = (
+            db.session.query(Tag.name)
+            .join(ContentTag, ContentTag.tag_id == Tag.tag_id)
+            .filter(ContentTag.content_id == self.content_id)
+            .order_by(Tag.name.asc())
+            .all()
+        )
+        return ", ".join(name for (name,) in names)
 
     @tags.setter
-    def tags(self, _value):
-        return None
+    def tags(self, value):
+        if not self.content_id:
+            return
+        names = []
+        for part in str(value or "").replace(";", ",").split(","):
+            name = " ".join(part.split())[:60]
+            if name and name.lower() not in {item.lower() for item in names}:
+                names.append(name)
+        ContentTag.query.filter_by(content_id=self.content_id).delete()
+        for name in names:
+            tag = Tag.query.filter(func.lower(Tag.name) == name.lower()).first()
+            if tag is None:
+                tag = Tag(name=name)
+                db.session.add(tag)
+                db.session.flush()
+            db.session.add(ContentTag(content_id=self.content_id, tag_id=tag.tag_id))
 
 
 class ContentGenre(db.Model):

@@ -1,50 +1,95 @@
 {% extends "base.html" %}
 {% block title %}Merchandise · Fan Hub Plus{% endblock %}
-{% block body_class %}stack-comics{% endblock %}
+{% block body_class %}case-room{% endblock %}
 {% block content %}
-  <header class="page-head">
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('main.home') }}">Home</a>
-      <span aria-hidden="true">/</span>
-      <span aria-current="page">Merchandise</span>
-    </nav>
-    <h1>On display</h1>
-    <p>Showcase only. There is no cart and no payment. Tags such as Limited Edition come from the admin list.</p>
-  </header>
-  <form class="filters" method="get">
-    <div>
-      <label for="category">Category</label>
-      <select id="category" name="category">
-        <option value="">All categories</option>
-        {% for cat in categories %}
-          <option value="{{ cat.slug }}" {% if category == cat.slug %}selected{% endif %}>{{ cat.name }}</option>
+  <section class="case">
+    <header class="case-head">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="{{ url_for('main.home') }}">Home</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Merchandise</span>
+      </nav>
+      <h1>Display case</h1>
+      <p>Showcase only. No cart and no checkout. Tags such as Limited Edition come from the admin list.</p>
+    </header>
+    <form class="case-bar" method="get">
+      <div>
+        <label for="category">Category</label>
+        <select id="category" name="category">
+          <option value="">All categories</option>
+          {% for cat in categories %}
+            <option value="{{ cat.slug }}" {% if category == cat.slug %}selected{% endif %}>{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="fandom">Fandom</label>
+        <select id="fandom" name="fandom">
+          <option value="">All fandoms</option>
+          {% for fan in fandoms %}
+            <option value="{{ fan.slug }}" {% if fandom == fan.slug %}selected{% endif %}>{{ fan.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="tag">Tag</label>
+        <select id="tag" name="tag">
+          <option value="">All tags</option>
+          {% for item in tags %}
+            <option value="{{ item.name }}" {% if tag == item.name %}selected{% endif %}>{{ item.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="upcoming">Release</label>
+        <select id="upcoming" name="upcoming">
+          <option value="">Any release</option>
+          <option value="yes" {% if upcoming %}selected{% endif %}>Upcoming only</option>
+        </select>
+      </div>
+      <div class="filter-actions">
+        <button type="submit">Show</button>
+        <a href="{{ url_for('main.merchandise') }}">Clear</a>
+        <a href="{{ url_for('main.upcoming') }}">Upcoming</a>
+      </div>
+    </form>
+    {% if cards %}
+      <ul class="card-grid">
+        {% for card in cards %}
+          <li>
+            <a class="content-card" href="{{ url_for('main.merchandise_detail', item_id=card.row.item_id) }}">
+              {% if card.row.image_url %}
+                <img src="{{ url_for('static', filename='images/catalog/' + card.row.image_url) }}" alt="" />
+              {% endif %}
+              <div class="card-copy">
+                <span class="type">{% if card.row.is_upcoming %}Upcoming{% else %}Merch{% endif %}</span>
+                <h2>{{ card.row.name }}</h2>
+                <p>{{ card.row.description }}</p>
+                <dl>
+                  <div>
+                    <dt>Category</dt>
+                    <dd>{{ card.category.name if card.category else '—' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Fandom</dt>
+                    <dd>{{ card.fandom.name if card.fandom else '—' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Year</dt>
+                    <dd>{{ card.row.release_date.year if card.row.release_date else '—' }}</dd>
+                  </div>
+                  <div>
+                    <dt>Tags</dt>
+                    <dd>{{ card.tags|join(', ') if card.tags else '—' }}</dd>
+                  </div>
+                </dl>
+              </div>
+            </a>
+          </li>
         {% endfor %}
-      </select>
-    </div>
-    <div class="filter-actions">
-      <button type="submit">Filter</button>
-      <a href="{{ url_for('main.upcoming') }}">Upcoming releases</a>
-    </div>
-  </form>
-  {% if cards %}
-    <ul class="card-grid">
-      {% for card in cards %}
-        <li>
-          <a class="content-card" href="{{ url_for('main.merchandise_detail', item_id=card.row.item_id) }}">
-            {% if card.row.image_url %}
-              <img src="{{ url_for('static', filename='images/catalog/' + card.row.image_url) }}" alt="" />
-            {% endif %}
-            <div class="card-copy">
-              <span class="type">{{ card.category.name if card.category else 'Merch' }}</span>
-              <h2>{{ card.row.name }}</h2>
-              <p>{{ card.row.description }}</p>
-              {% if card.tags %}<p class="meta-line">{{ card.tags|join(' · ') }}</p>{% endif %}
-            </div>
-          </a>
-        </li>
-      {% endfor %}
-    </ul>
-  {% else %}
-    <p class="empty">No merchandise in this category yet.</p>
-  {% endif %}
+      </ul>
+    {% else %}
+      <p class="empty">No merchandise in this case yet.</p>
+    {% endif %}
+  </section>
 {% endblock %}

@@ -1,0 +1,429 @@
+{% if tab == 'fandoms' %}
+<section class="console-block">
+  <header class="panel-head">
+    <p class="step">04</p>
+    <div>
+      <h2>Fandoms</h2>
+      <p>Add a fandom inside a category. A fandom that still has titles is hidden instead of deleted.</p>
+    </div>
+  </header>
+  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+    <summary>Add a fandom</summary>
+  <form method="post" action="{{ url_for('account.admin_fandom_create') }}" class="desk-form form-grid">
+    <label>Name<input name="name" required minlength="2" maxlength="120" /></label>
+    <label>Category
+      <select name="category_id" required>
+        {% for category in categories %}
+          <option value="{{ category.id }}">{{ category.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="span-2">Description<textarea name="description" rows="2" maxlength="500"></textarea></label>
+    {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">Add fandom</button>
+  </form>
+  </details>
+  <div class="table-wrap">
+    <table class="catalog">
+      <thead><tr><th>Name</th><th>Category</th><th>State</th><th></th></tr></thead>
+      <tbody>
+        {% for fan in fandom_rows %}
+          <tr>
+            <td>{{ fan.name }}</td>
+            <td>{% for category in categories if category.id == fan.category_id %}{{ category.name }}{% endfor %}</td>
+            <td>{{ 'Live' if fan.is_active else 'Hidden' }}</td>
+            <td>
+              <details {% if focus == fan.fandom_id|string %}open{% endif %}>
+                <summary>Edit</summary>
+                <form method="post" action="{{ url_for('account.admin_fandom_update', fandom_id=fan.fandom_id) }}" class="desk-form">
+                  <input name="name" value="{{ fan.name }}" required minlength="2" maxlength="120" aria-label="Name" />
+                  <select name="category_id" aria-label="Category">
+                    {% for category in categories %}
+                      <option value="{{ category.id }}" {% if category.id == fan.category_id %}selected{% endif %}>{{ category.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <textarea name="description" rows="2" maxlength="500" aria-label="Description">{{ fan.description or '' }}</textarea>
+                  {% if focus == fan.fandom_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                  <button type="submit">Save</button>
+                </form>
+                <form method="post" action="{{ url_for('account.admin_fandom_update', fandom_id=fan.fandom_id) }}">
+                  <button type="submit" name="action" value="{{ 'show' if not fan.is_active else 'hide' }}">{{ 'Show' if not fan.is_active else 'Hide' }}</button>
+                </form>
+                <form method="post" action="{{ url_for('account.admin_fandom_delete', fandom_id=fan.fandom_id) }}" onsubmit="return confirm({{ ('Delete ' ~ fan.name ~ '?')|tojson }})">
+                  <button type="submit" class="btn-quiet">Delete</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">No fandoms yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if tab == 'characters' %}
+<section class="console-block">
+  <header class="panel-head">
+    <p class="step">05</p>
+    <div>
+      <h2>Characters</h2>
+      <p>Name, category, and an optional fandom. These cards show on the Characters page.</p>
+    </div>
+  </header>
+  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+    <summary>Add a character</summary>
+  <form method="post" action="{{ url_for('account.admin_character_create') }}" class="desk-form form-grid">
+    <label>Name<input name="name" required minlength="2" maxlength="150" /></label>
+    <label>Alias<input name="alias" maxlength="150" /></label>
+    <label>Category
+      <select name="category_id" required>
+        {% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Fandom
+      <select name="fandom_id">
+        <option value="">None</option>
+        {% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}">{{ fan.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="span-2">Bio<textarea name="bio" rows="3" maxlength="2000"></textarea></label>
+    <label class="span-2">Image link<input name="image_url" type="url" /></label>
+    {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">Add character</button>
+  </form>
+  </details>
+  <div class="table-wrap">
+    <table class="catalog">
+      <thead><tr><th>Name</th><th>Fandom</th><th></th></tr></thead>
+      <tbody>
+        {% for row in character_rows %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td>{% for fan in fandom_rows if fan.fandom_id == row.fandom_id %}{{ fan.name }}{% endfor %}</td>
+            <td>
+              <details {% if focus == row.character_id|string %}open{% endif %}>
+                <summary>Edit</summary>
+                <form method="post" action="{{ url_for('account.admin_character_update', character_id=row.character_id) }}" class="desk-form">
+                  <input name="name" value="{{ row.name }}" required minlength="2" maxlength="150" aria-label="Name" />
+                  <input name="alias" value="{{ row.alias or '' }}" maxlength="150" aria-label="Alias" />
+                  <select name="category_id" aria-label="Category">
+                    {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+                  </select>
+                  <select name="fandom_id" aria-label="Fandom">
+                    <option value="">None</option>
+                    {% for fan in fandom_rows if fan.is_active or fan.fandom_id == row.fandom_id %}
+                      <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <textarea name="bio" rows="3" maxlength="2000" aria-label="Bio">{{ row.bio or '' }}</textarea>
+                  <input name="image_url" value="{{ row.image_url or '' }}" aria-label="Image link" />
+                  {% if focus == row.character_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                  <button type="submit">Save</button>
+                </form>
+                <form method="post" action="{{ url_for('account.admin_character_update', character_id=row.character_id) }}" onsubmit="return confirm({{ ('Delete ' ~ row.name ~ '?')|tojson }})">
+                  <button type="submit" name="action" value="delete" class="btn-quiet">Delete</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No characters yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if tab == 'merchandise' %}
+<section class="console-block">
+  <header class="panel-head">
+    <p class="step">06</p>
+    <div>
+      <h2>Merchandise</h2>
+      <p>Display only. Tick upcoming when the piece has not been released yet.</p>
+    </div>
+  </header>
+  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+    <summary>Add merchandise</summary>
+  <form method="post" action="{{ url_for('account.admin_merch_create') }}" class="desk-form form-grid">
+    <label>Name<input name="name" required minlength="2" maxlength="200" /></label>
+    <label>Category
+      <select name="category_id" required>
+        {% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Fandom
+      <select name="fandom_id"><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}">{{ fan.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Release date<input name="release_date" type="date" /></label>
+    <label class="span-2">Description<textarea name="description" rows="2" maxlength="2000"></textarea></label>
+    <label>Image link<input name="image_url" type="url" /></label>
+    <label>Reference link<input name="reference_url" type="url" /></label>
+    <fieldset class="span-2">
+      <legend>Tags</legend>
+      {% for tag in tag_rows %}<label class="check"><input type="checkbox" name="tags" value="{{ tag.tag_id }}" /> {{ tag.name }}</label>{% endfor %}
+    </fieldset>
+    <label class="check"><input type="checkbox" name="upcoming" value="yes" /> Upcoming</label>
+    {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">Add merchandise</button>
+  </form>
+  </details>
+  <div class="table-wrap">
+    <table class="catalog">
+      <thead><tr><th>Name</th><th>Upcoming</th><th></th></tr></thead>
+      <tbody>
+        {% for item in merch_rows %}
+          <tr>
+            <td>{{ item.name }}</td>
+            <td>{{ 'Yes' if item.is_upcoming else 'No' }}</td>
+            <td>
+              <details {% if focus == item.item_id|string %}open{% endif %}>
+                <summary>Edit</summary>
+                <form method="post" action="{{ url_for('account.admin_merch_update', item_id=item.item_id) }}" class="desk-form">
+                  <input name="name" value="{{ item.name }}" required minlength="2" maxlength="200" aria-label="Name" />
+                  <select name="category_id" aria-label="Category">
+                    {% for category in categories %}<option value="{{ category.id }}" {% if category.id == item.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+                  </select>
+                  <select name="fandom_id" aria-label="Fandom">
+                    <option value="">None</option>
+                    {% for fan in fandom_rows if fan.is_active or fan.fandom_id == item.fandom_id %}
+                      <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == item.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <input name="release_date" type="date" value="{{ item.release_date.isoformat() if item.release_date else '' }}" aria-label="Release date" />
+                  <textarea name="description" rows="2" maxlength="2000" aria-label="Description">{{ item.description or '' }}</textarea>
+                  <input name="image_url" value="{{ item.image_url or '' }}" aria-label="Image link" />
+                  <input name="reference_url" value="{{ item.reference_url or '' }}" aria-label="Reference link" />
+                  {% for tag in tag_rows %}
+                    <label class="check"><input type="checkbox" name="tags" value="{{ tag.tag_id }}" {% if tag.tag_id in merch_tag_map.get(item.item_id, []) %}checked{% endif %} /> {{ tag.name }}</label>
+                  {% endfor %}
+                  <label class="check"><input type="checkbox" name="upcoming" value="yes" {% if item.is_upcoming %}checked{% endif %} /> Upcoming</label>
+                  {% if focus == item.item_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                  <button type="submit">Save</button>
+                </form>
+                <form method="post" action="{{ url_for('account.admin_merch_update', item_id=item.item_id) }}" onsubmit="return confirm({{ ('Delete ' ~ item.name ~ '?')|tojson }})">
+                  <button type="submit" name="action" value="delete" class="btn-quiet">Delete</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No merchandise yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if tab == 'events' %}
+<section class="console-block">
+  <header class="panel-head">
+    <p class="step">07</p>
+    <div>
+      <h2>Events</h2>
+      <p>City and start time are required. Latitude and longitude place the pin.</p>
+    </div>
+  </header>
+  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+    <summary>Add an event</summary>
+  <form method="post" action="{{ url_for('account.admin_event_create') }}" class="desk-form form-grid">
+    <label>Title<input name="title" required minlength="2" maxlength="200" /></label>
+    <label>Type
+      <select name="event_type">
+        {% for kind in ['convention', 'concert', 'meetup', 'festival', 'expo', 'other'] %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>City<input name="city" required minlength="2" maxlength="100" /></label>
+    <label>Country<input name="country" maxlength="100" /></label>
+    <label>Venue<input name="venue" maxlength="255" /></label>
+    <label>Address<input name="address" maxlength="255" /></label>
+    <label>Starts<input name="start_at" type="datetime-local" required /></label>
+    <label>Ends<input name="end_at" type="datetime-local" /></label>
+    <label>Latitude<input name="latitude" inputmode="decimal" /></label>
+    <label>Longitude<input name="longitude" inputmode="decimal" /></label>
+    <label>Category
+      <select name="category_id"><option value="">None</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
+    </label>
+    <label>Fandom
+      <select name="fandom_id"><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}">{{ fan.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="span-2">Description<textarea name="description" rows="2" maxlength="2000"></textarea></label>
+    <label class="span-2">Ticket link<input name="ticket_url" type="url" /></label>
+    {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">Add event</button>
+  </form>
+  </details>
+  <div class="table-wrap">
+    <table class="catalog">
+      <thead><tr><th>Title</th><th>City</th><th>When</th><th></th></tr></thead>
+      <tbody>
+        {% for row in event_rows %}
+          <tr>
+            <td>{{ row.title }}</td>
+            <td>{{ row.city }}</td>
+            <td>{{ row.start_at.strftime('%d %b %Y') if row.start_at else '' }}</td>
+            <td>
+              <details {% if focus == row.event_id|string %}open{% endif %}>
+                <summary>Edit</summary>
+                <form method="post" action="{{ url_for('account.admin_event_update', event_id=row.event_id) }}" class="desk-form">
+                  <input name="title" value="{{ row.title }}" required minlength="2" maxlength="200" aria-label="Title" />
+                  <select name="event_type" aria-label="Type">
+                    {% for kind in ['convention', 'concert', 'meetup', 'festival', 'expo', 'other'] %}
+                      <option value="{{ kind }}" {% if row.event_type == kind %}selected{% endif %}>{{ kind }}</option>
+                    {% endfor %}
+                  </select>
+                  <input name="city" value="{{ row.city }}" required aria-label="City" />
+                  <input name="country" value="{{ row.country or '' }}" aria-label="Country" />
+                  <input name="venue" value="{{ row.venue or '' }}" aria-label="Venue" />
+                  <input name="address" value="{{ row.address or '' }}" aria-label="Address" />
+                  <input name="start_at" type="datetime-local" value="{{ row.start_at.strftime('%Y-%m-%dT%H:%M') if row.start_at else '' }}" required aria-label="Starts" />
+                  <input name="end_at" type="datetime-local" value="{{ row.end_at.strftime('%Y-%m-%dT%H:%M') if row.end_at else '' }}" aria-label="Ends" />
+                  <input name="latitude" value="{{ row.latitude if row.latitude is not none else '' }}" aria-label="Latitude" />
+                  <input name="longitude" value="{{ row.longitude if row.longitude is not none else '' }}" aria-label="Longitude" />
+                  <select name="category_id" aria-label="Category">
+                    <option value="">None</option>
+                    {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+                  </select>
+                  <select name="fandom_id" aria-label="Fandom">
+                    <option value="">None</option>
+                    {% for fan in fandom_rows if fan.is_active or fan.fandom_id == row.fandom_id %}
+                      <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                    {% endfor %}
+                  </select>
+                  <textarea name="description" rows="2" aria-label="Description">{{ row.description or '' }}</textarea>
+                  <input name="ticket_url" value="{{ row.ticket_url or '' }}" aria-label="Ticket link" />
+                  {% if focus == row.event_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                  <button type="submit">Save</button>
+                </form>
+                <form method="post" action="{{ url_for('account.admin_event_update', event_id=row.event_id) }}" onsubmit="return confirm({{ ('Delete ' ~ row.title ~ '?')|tojson }})">
+                  <button type="submit" name="action" value="delete" class="btn-quiet">Delete</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4">No events yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if tab == 'tags' %}
+<section class="console-block">
+  <header class="panel-head">
+    <p class="step">08</p>
+    <div>
+      <h2>Tags</h2>
+      <p>Shared labels such as Limited Edition, Pre-Order, and Collectible.</p>
+    </div>
+  </header>
+  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+    <summary>Add a tag</summary>
+  <form method="post" action="{{ url_for('account.admin_tag_create') }}" class="desk-form">
+    <label>Name<input name="name" required minlength="2" maxlength="60" /></label>
+    {% if error and not focus %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">Add tag</button>
+  </form>
+  </details>
+  <div class="table-wrap">
+    <table class="catalog">
+      <thead><tr><th>Name</th><th></th></tr></thead>
+      <tbody>
+        {% for tag in tag_rows %}
+          <tr>
+            <td>{{ tag.name }}</td>
+            <td>
+              <form method="post" action="{{ url_for('account.admin_tag_update', tag_id=tag.tag_id) }}" class="desk-form">
+                <input name="name" value="{{ tag.name }}" required minlength="2" maxlength="60" aria-label="Name" />
+                {% if focus == tag.tag_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                <button type="submit">Save</button>
+              </form>
+              <form method="post" action="{{ url_for('account.admin_tag_update', tag_id=tag.tag_id) }}" onsubmit="return confirm({{ ('Delete ' ~ tag.name ~ '?')|tojson }})">
+                <button type="submit" name="action" value="delete" class="btn-quiet">Delete</button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="2">No tags yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if tab == 'faqs' %}
+<section class="console-block">
+  <header class="panel-head">
+    <p class="step">09</p>
+    <div>
+      <h2>FAQ</h2>
+      <p>Active answers are used when a chat message contains the question or a keyword.</p>
+    </div>
+  </header>
+  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+    <summary>Add an FAQ</summary>
+  <form method="post" action="{{ url_for('account.admin_faq_create') }}" class="desk-form form-grid">
+    <label class="span-2">Question<textarea name="question" rows="2" required maxlength="500"></textarea></label>
+    <label class="span-2">Answer<textarea name="answer" rows="3" required maxlength="2000"></textarea></label>
+    <label>Keywords<input name="keywords" maxlength="500" placeholder="tickets, map" /></label>
+    <label>Category
+      <select name="category_id"><option value="">Any</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="check"><input type="checkbox" name="active" value="yes" checked /> Active</label>
+    {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
+    <button type="submit">Add FAQ</button>
+  </form>
+  </details>
+  <div class="table-wrap">
+    <table class="catalog">
+      <thead><tr><th>Question</th><th>State</th><th></th></tr></thead>
+      <tbody>
+        {% for row in faq_rows %}
+          <tr>
+            <td>{{ row.question }}</td>
+            <td>{{ 'Active' if row.is_active else 'Off' }}</td>
+            <td>
+              <details {% if focus == row.faq_id|string %}open{% endif %}>
+                <summary>Edit</summary>
+                <form method="post" action="{{ url_for('account.admin_faq_update', faq_id=row.faq_id) }}" class="desk-form">
+                  <textarea name="question" rows="2" required maxlength="500" aria-label="Question">{{ row.question }}</textarea>
+                  <textarea name="answer" rows="3" required maxlength="2000" aria-label="Answer">{{ row.answer }}</textarea>
+                  <input name="keywords" value="{{ row.keywords or '' }}" maxlength="500" aria-label="Keywords" />
+                  <select name="category_id" aria-label="Category">
+                    <option value="">Any</option>
+                    {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+                  </select>
+                  <label class="check"><input type="checkbox" name="active" value="yes" {% if row.is_active %}checked{% endif %} /> Active</label>
+                  {% if focus == row.faq_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                  <button type="submit">Save</button>
+                </form>
+                <form method="post" action="{{ url_for('account.admin_faq_update', faq_id=row.faq_id) }}" onsubmit="return confirm('Delete this FAQ?')">
+                  <button type="submit" name="action" value="delete" class="btn-quiet">Delete</button>
+                </form>
+              </details>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3">No FAQ entries yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <h3>Questions the chatbot could not match</h3>
+  <ul>
+    {% for row in missed_questions %}
+      <li>{{ row.message }} · {{ row.count }}</li>
+    {% else %}
+      <li>No unmatched questions yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

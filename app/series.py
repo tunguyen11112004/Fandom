@@ -175,12 +175,30 @@ IMAGES = {
     "Dandadan": "dandadan.jpg",
 }
 
+CATALOG_SLUGS = {
+    "One Piece": "one-piece",
+    "Naruto": "naruto",
+    "Demon Slayer": "demon-slayer",
+    "Jujutsu Kaisen": "jujutsu-kaisen",
+    "Attack on Titan": "attack-on-titan",
+    "My Hero Academia": "my-hero-academia",
+    "Chainsaw Man": "chainsaw-man",
+    "Spy x Family": "spy-x-family",
+    "Dragon Ball": "dragon-ball",
+    "Bleach": "bleach",
+    "Hunter x Hunter": "hunter-x-hunter",
+    "Death Note": "death-note",
+    "Frieren": "frieren",
+    "Dandadan": "dandadan",
+}
+
 
 def with_images(rows):
     ready = []
     for series in rows:
         item = dict(series)
         item["image"] = IMAGES.get(series["name"])
+        item["slug"] = CATALOG_SLUGS.get(series["name"])
         ready.append(item)
     return ready
 

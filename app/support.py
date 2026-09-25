@@ -1,6 +1,6 @@
 from sqlalchemy import or_
 
-from .models import Category, Content, ContentGenre, Genre
+from .models import Category, ChatbotFaq, Content, ContentGenre, Genre
 from .news import news_items
 from .series import SERIES, find_series
 
@@ -14,8 +14,8 @@ GUIDE = [
         "links": [{"label": "Open Explore", "href": "/explore"}],
     },
     {
-        "text": "News is where I send people who ask what's going on. It's the September anime and manga headlines, and you can split it into just anime or just manga. Every story links out to the original write-up. One more thing after this.",
-        "links": [{"label": "Open the news", "href": "/news"}],
+        "text": "Featured is where I send people who ask what's going on. The editors pick those pieces, and you can split them by shelf. Every one opens right here on the hub. One more thing after this.",
+        "links": [{"label": "Open featured", "href": "/news"}],
     },
     {
         "text": "That's the lay of the land. Members sign in, admins use a separate gate, and merchandise stays on display. Nothing here is for sale. If you tell me a title or a fandom, I'll pull it up. What were you actually looking for?",
@@ -81,7 +81,7 @@ def _faq(text):
         }
     if any(word in text for word in ("category", "categories", "shelves", "shelf", "what pages", "what's on", "whats on", "about this", "what is this", "what is fan")):
         return {
-            "text": "Fan Hub Plus is a desk for eight worlds: Anime, Gaming, Movies, TV Shows, K-Pop, Comics, Manga, and Cosplay. Home has the sky and the search. Explore is the full catalog with filters. News is the September headlines. The sitemap lists every room.",
+            "text": "Fan Hub Plus is a desk for eight worlds: Anime, Gaming, Movies, TV Shows, K-Pop, Comics, Manga, and Cosplay. Home has the sky and the search. Explore is the full catalog with filters. Featured has the editors' picks. The sitemap lists every room.",
             "links": [
                 {"label": "Explore", "href": "/explore"},
                 {"label": "Sitemap", "href": "/sitemap"},
@@ -93,11 +93,16 @@ def _faq(text):
             "links": [],
         }
     if any(word in text for word in ("news", "headline", "what's new", "whats new", "what is new")):
-        headlines = news_items()[:2]
-        first, second = headlines[0]["title"], headlines[1]["title"]
+        headlines = news_items(limit=2)
+        if not headlines:
+            return {
+                "text": "The editors haven't featured anything yet. Explore has the full catalog in the meantime.",
+                "links": [{"label": "Open Explore", "href": "/explore"}],
+            }
+        titles = ". And ".join(item["title"] for item in headlines)
         return {
-            "text": f"A couple of fresh ones: {first}. And {second}. I can open the rest of the desk if you want to skim.",
-            "links": [{"label": "Show me the news", "href": "/news"}],
+            "text": f"Editors are featuring: {titles}. I can open the rest if you want to skim.",
+            "links": [{"label": "Show me featured", "href": "/news"}],
         }
     asking_how = any(word in text.split() for word in ("how", "where", "help"))
     if (
@@ -240,6 +245,16 @@ def _catalog(text):
     return {"text": text, "links": _links_for(matches)}
 
 
+def _stored_faq(text):
+    rows = ChatbotFaq.query.filter_by(is_active=True).all()
+    for row in rows:
+        keys = [part.strip().lower() for part in (row.keywords or "").split(",") if part.strip()]
+        question = " ".join(row.question.lower().split())
+        if question and question in text or any(key in text for key in keys):
+            return {"text": row.answer, "links": [], "faq_id": row.faq_id}
+    return None
+
+
 def reply_to(message, guide_step):
     text = " ".join(message.lower().split())
     if any(phrase in text for phrase in ("show me around", "tour", "guide me", "how does this work", "get started", "walk me")):
@@ -255,7 +270,7 @@ def reply_to(message, guide_step):
             "guide_step": 0,
         }
 
-    found = _small_talk(text) or _faq(text) or _series_reply(text) or _catalog(text)
+    found = _small_talk(text) or _stored_faq(text) or _faq(text) or _series_reply(text) or _catalog(text)
     if found:
         found["guide_step"] = guide_step
         return found

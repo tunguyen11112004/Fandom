@@ -13,6 +13,7 @@ from flask import (
     url_for,
 )
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
 from .models import (
@@ -20,15 +21,21 @@ from .models import (
     Bookmark,
     Category,
     CharacterProfile,
+    ChatbotFaq,
     ChatbotQuery,
     Content,
     ContentGenre,
+    ContentTag,
     ContentRating,
+    ContentTimelineEntry,
+    Event,
     FanSubmission,
     Feedback,
     Fandom,
     Genre,
+    Tag,
     MerchandiseItem,
+    MerchandiseTag,
     Notification,
     User,
     UserCategory,
@@ -39,6 +46,13 @@ from .popularity import refresh_content_popularity
 from .security import hash_password, hash_token, new_raw_token, utcnow, verify_password
 
 bp = Blueprint("account", __name__)
+
+
+def _safe_next(value, fallback):
+    nxt = (value or "").strip()
+    if not nxt.startswith("/") or nxt.startswith("//") or "\\" in nxt:
+        return fallback
+    return nxt
 
 
 def current_user():
@@ -144,9 +158,7 @@ def login():
             session["pending_email"] = user.email
         else:
             session["user_id"] = user.user_id
-            nxt = request.form.get("next") or request.args.get("next") or url_for("account.dashboard")
-            if not nxt.startswith("/"):
-                nxt = url_for("account.dashboard")
+            nxt = _safe_next(request.form.get("next") or request.args.get("next"), url_for("main.home"))
             return redirect(nxt)
     return render_template("auth/login.html", error=error)
 
@@ -463,9 +475,10 @@ def rate(slug):
     item = Content.query.filter_by(slug=slug, status="published").first()
     if item is None:
         return redirect(url_for("main.explore"))
-    score = request.form.get("score", "")
+    score = (request.form.get("score") or "5").strip()
+    back = request.form.get("next") or ""
     if not score.isdigit() or int(score) < 1 or int(score) > 5:
-        return redirect(url_for("main.content_detail", slug=slug))
+        return redirect(back if back.startswith("/media/") else url_for("main.content_detail", slug=slug))
     row = ContentRating.query.filter_by(user_id=user.user_id, content_id=item.content_id).first()
     if row is None:
         db.session.add(ContentRating(user_id=user.user_id, content_id=item.content_id, score=int(score)))
@@ -474,6 +487,8 @@ def rate(slug):
     _log_activity(user, "rate", f"Rated {item.title} {score}/5", f"/explore/{item.slug}")
     refresh_content_popularity(db.session, item.content_id)
     db.session.commit()
+    if back.startswith("/media/"):
+        return redirect(back)
     return redirect(url_for("main.content_detail", slug=slug))
 
 
@@ -558,6 +573,7 @@ def submissions():
         return redirect(url_for("account.login", next=request.path))
     error = None
     categories = Category.query.order_by(Category.category_id).all()
+    fandoms = Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all()
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         body = request.form.get("body", "").strip()
@@ -566,10 +582,20 @@ def submissions():
         media_url = request.form.get("media_url", "").strip()
         rights = request.form.get("rights") == "yes"
         category = db.session.get(Category, int(category_id)) if category_id.isdigit() else None
-        if not title or not body or category is None:
-            error = "Title, category, and the story itself are required."
-        elif content_type not in {"article", "video", "image", "profile"}:
+        file_types = {"video": {".mp4", ".webm"}, "audio": {".mp3", ".wav", ".m4a", ".ogg"}}
+        uploaded, upload_error = (None, None)
+        if content_type in file_types:
+            uploaded, upload_error = _save_media_file(request.files.get("media_file"), file_types[content_type])
+        raw_fandom = request.form.get("fandom_id", "").strip()
+        fan = db.session.get(Fandom, int(raw_fandom)) if raw_fandom.isdigit() else None
+        if not title or not body or category is None or fan is None:
+            error = "Title, category, fandom, and the story itself are required."
+        elif fan.category_id != category.category_id or not fan.is_active:
+            error = "Choose an active fandom in that category."
+        elif content_type not in {"article", "video", "audio", "image", "profile"}:
             error = "Pick a content type from the list."
+        elif upload_error:
+            error = upload_error
         elif media_url and not media_url.startswith(("http://", "https://")):
             error = "Media links need to start with http:// or https://."
         elif not rights:
@@ -586,29 +612,39 @@ def submissions():
                 error = "That piece is already published."
             if error is None:
                 row.category_id = category.category_id
+                row.fandom_id = fan.fandom_id
                 row.title = title[:200]
                 row.body = body
                 row.content_type = content_type if content_type != "profile" else "article"
-                row.media_url = media_url[:300]
+                row.media_url = (uploaded or media_url)[:300]
                 row.rights_ok = True
                 row.status = "pending"
                 row.reject_reason = ""
                 _log_activity(user, "submission", f"Sent “{row.title}” for review", "/dashboard")
                 db.session.commit()
                 return redirect(url_for("account.dashboard"))
+    rejected = FanSubmission.query.filter_by(user_id=user.user_id, status="rejected")
+    edit = None
+    if request.args.get("new") != "1":
+        raw_edit = request.args.get("edit", "")
+        if not str(raw_edit).isdigit() and request.method == "POST":
+            raw_edit = request.form.get("submission_id", "")
+        if str(raw_edit).isdigit():
+            edit = rejected.filter_by(submission_id=int(raw_edit)).first()
+            if edit is None:
+                edit = FanSubmission.query.filter_by(
+                    user_id=user.user_id, submission_id=int(raw_edit), status="pending"
+                ).first()
+        elif request.method == "GET":
+            edit = rejected.order_by(FanSubmission.submission_id.desc()).first()
     return render_template(
         "auth/submissions.html",
         user=user,
         error=error,
         categories=categories,
+        fandoms=fandoms,
         mine=FanSubmission.query.filter_by(user_id=user.user_id).order_by(FanSubmission.submission_id.desc()).all(),
-        edit=FanSubmission.query.filter_by(
-            user_id=user.user_id,
-            submission_id=int(request.args.get("edit")),
-            status="rejected",
-        ).first()
-        if str(request.args.get("edit", "")).isdigit()
-        else None,
+        edit=edit,
     )
 
 
@@ -701,8 +737,43 @@ def admin_home():
             .all()
         )
     tab = request.args.get("tab", "queue")
-    if tab not in {"queue", "feedback", "health", "content", "categories", "users", "record"}:
+    tabs = {
+        "queue", "feedback", "health", "content", "categories", "fandoms",
+        "characters", "merchandise", "events", "tags", "faqs", "users", "record",
+    }
+    if tab not in tabs:
         tab = "queue"
+    catalog_q = request.args.get("q", "").strip() if tab == "content" else ""
+    catalog_category = request.args.get("category", "").strip() if tab == "content" else ""
+    catalog_type = request.args.get("type", "").strip() if tab == "content" else ""
+    catalog_state = request.args.get("state", "").strip() if tab == "content" else ""
+    catalog_featured = request.args.get("featured", "").strip() if tab == "content" else ""
+    title_query = Content.query
+    if catalog_q:
+        like = f"%{catalog_q}%"
+        title_query = title_query.filter(or_(Content.title.ilike(like), Content.summary.ilike(like)))
+    if catalog_category:
+        title_query = title_query.join(Category, Category.category_id == Content.category_id).filter(Category.slug == catalog_category)
+    if catalog_type:
+        title_query = title_query.filter(Content.type == catalog_type)
+    if catalog_state == "live":
+        title_query = title_query.filter(Content.status == "published")
+    elif catalog_state == "hidden":
+        title_query = title_query.filter(Content.status != "published")
+    if catalog_featured == "yes":
+        title_query = title_query.filter(Content.is_featured.is_(True))
+    catalog_page = 1
+    catalog_pages = 1
+    catalog_total = 0
+    titles = []
+    if tab == "content":
+        catalog_total = title_query.count()
+        catalog_pages = max(1, (catalog_total + 7) // 8)
+        raw_page = request.args.get("page", "1")
+        catalog_page = int(raw_page) if raw_page.isdigit() and int(raw_page) > 0 else 1
+        catalog_page = min(catalog_page, catalog_pages)
+        titles = title_query.order_by(Content.title).offset((catalog_page - 1) * 8).limit(8).all()
+    needs_fandoms = tab in {"content", "fandoms", "characters", "merchandise", "events"}
     return render_template(
         "auth/admin.html",
         user=user,
@@ -712,8 +783,31 @@ def admin_home():
         member_count=User.query.filter_by(role="user").count(),
         chat_count=chat_query.count(),
         popular=popular,
-        titles=Content.query.order_by(Content.title).all(),
+        titles=titles,
+        catalog_page=catalog_page,
+        catalog_pages=catalog_pages,
+        catalog_total=catalog_total,
+        catalog_q=catalog_q,
+        catalog_category=catalog_category,
+        catalog_type=catalog_type,
+        catalog_state=catalog_state,
+        catalog_featured=catalog_featured,
+        fandom_rows=Fandom.query.order_by(Fandom.name).all() if needs_fandoms else [],
+        character_rows=CharacterProfile.query.order_by(CharacterProfile.name).all() if tab == "characters" else [],
+        merch_rows=MerchandiseItem.query.order_by(MerchandiseItem.name).all() if tab == "merchandise" else [],
+        merch_tag_map=_merch_tag_map() if tab == "merchandise" else {},
+        event_rows=Event.query.order_by(Event.start_at.desc()).all() if tab == "events" else [],
+        tag_rows=Tag.query.order_by(Tag.name).all() if tab in {"tags", "merchandise"} else [],
+        faq_rows=ChatbotFaq.query.order_by(ChatbotFaq.faq_id.desc()).all() if tab == "faqs" else [],
+        missed_questions=_missed_questions() if tab == "faqs" else [],
+        viewed_titles=Content.query.order_by(Content.view_count.desc()).limit(5).all() if tab == "health" else [],
+        viewed_merch=MerchandiseItem.query.order_by(MerchandiseItem.view_count.desc()).limit(5).all() if tab == "health" else [],
         categories=Category.query.order_by(Category.category_id).all(),
+        category_usage=_category_usage() if tab == "categories" else {},
+        error=request.args.get("error", ""),
+        focus=request.args.get("focus", ""),
+        draft_name=request.args.get("name", ""),
+        draft_description=request.args.get("description", ""),
         members=members,
         queue=FanSubmission.query.filter_by(status="pending").order_by(FanSubmission.submission_id.asc()).all(),
         feedback_rows=_feedback_rows(),
@@ -743,6 +837,51 @@ def _feedback_rows():
     return query.order_by(Feedback.feedback_id.desc()).all()
 
 
+def _save_media_file(upload, allowed=None):
+    if upload is None or not upload.filename:
+        return None, None
+    ext = os.path.splitext(upload.filename)[1].lower()
+    allowed = allowed or {".mp4", ".webm", ".mp3", ".wav", ".m4a", ".ogg"}
+    if ext not in allowed:
+        names = ", ".join(item[1:] for item in sorted(allowed))
+        return None, f"Upload a {names} file."
+    upload.seek(0, os.SEEK_END)
+    size = upload.tell()
+    upload.seek(0)
+    if size > 30 * 1024 * 1024:
+        return None, "Media files must be 30 MB or smaller."
+    folder = os.path.join(current_app.static_folder, "uploads", "media")
+    os.makedirs(folder, exist_ok=True)
+    filename = f"{secrets.token_hex(16)}{ext}"
+    upload.save(os.path.join(folder, filename))
+    return f"/static/uploads/media/{filename}", None
+
+
+def _apply_media(item, content_type, embed, uploaded):
+    needs_media = content_type in {"video", "audio", "trailer", "explainer"}
+    if request.form.get("remove_media") == "yes" and not uploaded and not embed:
+        item.embed_url = None
+        item.media_url = None
+        if needs_media:
+            return "Add a YouTube link or upload a video or audio file."
+        return None
+    if uploaded:
+        item.embed_url = uploaded
+        item.media_url = uploaded
+        return None
+    if embed:
+        item.embed_url = embed[:500]
+        item.media_url = embed[:500]
+        return None
+    existing = item.embed_url if item.embed_url and item.embed_url != "None" else None
+    if existing:
+        item.embed_url = existing
+        return None
+    if needs_media:
+        return "Add a YouTube link or upload a video or audio file."
+    return None
+
+
 def _content_from_form(item):
     title = request.form.get("title", "").strip()
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
@@ -757,9 +896,17 @@ def _content_from_form(item):
         return "Title, category, genre, year, summary, and body are required."
     if content_type not in {"article", "video", "audio", "image", "trailer", "explainer"}:
         content_type = "article"
+    uploaded, upload_error = _save_media_file(request.files.get("media_file"))
+    if upload_error:
+        return upload_error
     if embed and not embed.startswith(("http://", "https://")):
-        return "Embed links need to start with http:// or https://."
+        return "Video and audio links need to start with http:// or https://."
+    raw_fandom = request.form.get("fandom_id", "").strip()
+    fan = db.session.get(Fandom, int(raw_fandom)) if raw_fandom.isdigit() else None
+    if raw_fandom and (fan is None or fan.category_id != category.category_id or not fan.is_active):
+        return "Choose an active fandom in that category."
     item.category_id = category.category_id
+    item.fandom_id = fan.fandom_id if fan else None
     item.title = title[:200]
     item.slug = item.slug or _slugify(title)
     if request.form.get("retitle") == "yes":
@@ -768,11 +915,14 @@ def _content_from_form(item):
     item.release_year = int(year)
     item.summary = summary[:500]
     item.body = body
-    item.embed_url = embed[:300]
+    media_error = _apply_media(item, content_type, embed, uploaded)
+    if media_error:
+        return media_error
     item.featured = request.form.get("featured") == "yes"
     item.published = request.form.get("published") == "yes"
     score = request.form.get("popularity_score", "50")
     item.popularity_score = int(score) if score.isdigit() else 50
+    db.session.add(item)
     db.session.flush()
     ContentGenre.query.filter_by(content_id=item.content_id).delete()
     named = Genre.query.filter_by(name=genre[:60]).first()
@@ -781,7 +931,38 @@ def _content_from_form(item):
         db.session.add(named)
         db.session.flush()
     db.session.add(ContentGenre(content_id=item.content_id, genre_id=named.genre_id))
+    if "tags" in request.form:
+        item.tags = tags
+    _sync_timeline(item)
     return None
+
+
+def _sync_timeline(item):
+    if "timeline" not in request.form:
+        return
+    ContentTimelineEntry.query.filter_by(content_id=item.content_id).delete()
+    order = 0
+    for line in request.form.get("timeline", "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split("|")]
+        year = parts[0] if len(parts) > 1 else ""
+        title = parts[1] if len(parts) > 1 else parts[0]
+        description = parts[2] if len(parts) > 2 else ""
+        if not title:
+            continue
+        entry_date = date(int(year), 1, 1) if year.isdigit() and len(year) == 4 else None
+        db.session.add(
+            ContentTimelineEntry(
+                content_id=item.content_id,
+                entry_date=entry_date,
+                title=title[:200],
+                description=description or None,
+                sort_order=order,
+            )
+        )
+        order += 1
 
 
 @bp.route("/admin/content", methods=["POST"])
@@ -814,10 +995,115 @@ def admin_content_update(item_id):
         db.session.commit()
         return redirect(url_for("account.admin_home", tab="content"))
     error = _content_from_form(item)
-    if error is None:
-        _admin_log(user, "content.edit", item.title)
-        db.session.commit()
+    if error:
+        db.session.rollback()
+        return redirect(url_for("account.admin_home", tab="content", error=error, focus=item_id))
+    _admin_log(user, "content.edit", item.title)
+    db.session.commit()
     return redirect(url_for("account.admin_home", tab="content"))
+
+
+def _category_redirect(error=None, **extra):
+    params = {"tab": "categories"}
+    if error:
+        params["error"] = error
+    params.update({key: value for key, value in extra.items() if value})
+    return redirect(url_for("account.admin_home", **params))
+
+
+def _category_usage():
+    def grouped(model):
+        rows = db.session.query(model.category_id, func.count()).group_by(model.category_id).all()
+        return {category_id: count for category_id, count in rows if category_id}
+
+    titles = grouped(Content)
+    fandoms = grouped(Fandom)
+    characters = grouped(CharacterProfile)
+    merchandise = grouped(MerchandiseItem)
+    submissions = grouped(FanSubmission)
+    usage = {}
+    for category_id in set(titles) | set(fandoms) | set(characters) | set(merchandise) | set(submissions):
+        entry = {
+            "titles": titles.get(category_id, 0),
+            "fandoms": fandoms.get(category_id, 0),
+            "characters": characters.get(category_id, 0),
+            "merchandise": merchandise.get(category_id, 0),
+            "submissions": submissions.get(category_id, 0),
+        }
+        entry["reason"] = _category_block(entry)
+        usage[category_id] = entry
+    return usage
+
+
+def _category_block(usage):
+    labels = (
+        ("titles", "title", "titles"),
+        ("fandoms", "fandom", "fandoms"),
+        ("characters", "character", "characters"),
+        ("merchandise", "merchandise item", "merchandise items"),
+        ("submissions", "submission", "submissions"),
+    )
+    parts = []
+    for key, singular, plural in labels:
+        count = usage.get(key, 0)
+        if count:
+            parts.append(f"{count} {singular if count == 1 else plural}")
+    if not parts:
+        return None
+    return "This category still has " + ", ".join(parts) + ". Move or remove them before deleting it."
+
+
+def _validate_category(name, description, ignore_id=None):
+    name = " ".join((name or "").split())
+    description = (description or "").strip()
+    if not name:
+        return "Category name is required."
+    if len(name) < 2 or len(name) > 50:
+        return "Category name must be 2 to 50 characters."
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 &'./-]*", name) is None:
+        return "Category name can use letters, numbers, spaces, and & ' . / -."
+    if len(description) > 500:
+        return "Description must be 500 characters or fewer."
+    clash = Category.query.filter(func.lower(Category.name) == name.lower()).first()
+    if clash is not None and clash.category_id != ignore_id:
+        return "A category with that name already exists."
+    return None
+
+
+def _category_slug(name, ignore_id=None):
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "category"
+    base = base[:60].strip("-") or "category"
+    slug = base
+    number = 2
+    while True:
+        taken = Category.query.filter_by(slug=slug).first()
+        if taken is None or taken.category_id == ignore_id:
+            return slug
+        suffix = f"-{number}"
+        slug = f"{base[: 60 - len(suffix)].strip('-')}{suffix}"
+        number += 1
+
+
+@bp.route("/admin/categories", methods=["POST"])
+def admin_category_create():
+    user = _admin()
+    if user is None:
+        return redirect(url_for("account.admin_login"))
+    name = request.form.get("name", "")
+    description = request.form.get("description", "")
+    error = _validate_category(name, description)
+    if error:
+        return _category_redirect(error, name=name.strip(), description=description.strip())
+    clean = " ".join(name.split())
+    row = Category(
+        name=clean,
+        slug=_category_slug(clean),
+        description=description.strip() or None,
+    )
+    db.session.add(row)
+    _admin_log(user, "category.create", clean)
+    db.session.commit()
+    return _category_redirect()
 
 
 @bp.route("/admin/category/<int:category_id>", methods=["POST"])
@@ -826,11 +1112,620 @@ def admin_category(category_id):
     if user is None:
         return redirect(url_for("account.admin_login"))
     category = db.session.get(Category, category_id)
-    if category is not None:
-        category.description = request.form.get("description", category.description).strip() or category.description
-        _admin_log(user, "category.edit", category.name)
+    if category is None:
+        return _category_redirect("That category no longer exists.")
+    name = request.form.get("name", "")
+    description = request.form.get("description", "")
+    error = _validate_category(name, description, ignore_id=category.category_id)
+    if error:
+        return _category_redirect(error, focus=category_id, name=name.strip(), description=description.strip())
+    category.name = " ".join(name.split())
+    category.description = description.strip() or None
+    _admin_log(user, "category.edit", category.name)
+    db.session.commit()
+    return _category_redirect()
+
+
+@bp.route("/admin/category/<int:category_id>/delete", methods=["POST"])
+def admin_category_delete(category_id):
+    user = _admin()
+    if user is None:
+        return redirect(url_for("account.admin_login"))
+    category = db.session.get(Category, category_id)
+    if category is None:
+        return _category_redirect("That category no longer exists.")
+    blocked = _category_block(_category_usage().get(category_id, {}))
+    if blocked:
+        return _category_redirect(blocked, focus=category_id)
+    name = category.name
+    db.session.delete(category)
+    _admin_log(user, "category.delete", name)
+    try:
         db.session.commit()
-    return redirect(url_for("account.admin_home", tab="categories"))
+    except IntegrityError:
+        db.session.rollback()
+        return _category_redirect("This category is still in use. Move or remove what belongs to it first.", focus=category_id)
+    return _category_redirect()
+
+
+def _desk_redirect(tab, error=None, focus=None):
+    params = {"tab": tab}
+    if error:
+        params["error"] = error
+    if focus is not None:
+        params["focus"] = focus
+    return redirect(url_for("account.admin_home", **params))
+
+
+def _require_admin():
+    user = _admin()
+    if user is None:
+        return None, redirect(url_for("account.admin_login"))
+    return user, None
+
+
+def _clean_name(value, low, high, label):
+    name = " ".join((value or "").split())
+    if not name:
+        return None, f"{label} is required."
+    if len(name) < low or len(name) > high:
+        return None, f"{label} must be {low} to {high} characters."
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 &'./-]*", name) is None:
+        return None, f"{label} can use letters, numbers, spaces, and & ' . / -."
+    return name, None
+
+
+def _optional_text(value, limit, label):
+    text = (value or "").strip()
+    if len(text) > limit:
+        return None, f"{label} must be {limit} characters or fewer."
+    return text or None, None
+
+
+def _optional_url(value, label):
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    if not text.startswith(("http://", "https://")):
+        return None, f"{label} must start with http:// or https://."
+    if len(text) > 500:
+        return None, f"{label} must be 500 characters or fewer."
+    return text, None
+
+
+def _named_slug(model, name, ignore_id=None, id_attr="fandom_id", max_len=140):
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "item"
+    base = base[:max_len].strip("-") or "item"
+    slug = base
+    number = 2
+    while True:
+        taken = model.query.filter_by(slug=slug).first()
+        if taken is None or getattr(taken, id_attr) == ignore_id:
+            return slug
+        suffix = f"-{number}"
+        slug = f"{base[: max_len - len(suffix)].strip('-')}{suffix}"
+        number += 1
+
+
+def _fandom_in_use(fandom_id):
+    return any(
+        (
+            Content.query.filter_by(fandom_id=fandom_id).first(),
+            CharacterProfile.query.filter_by(fandom_id=fandom_id).first(),
+            MerchandiseItem.query.filter_by(fandom_id=fandom_id).first(),
+            Event.query.filter_by(fandom_id=fandom_id).first(),
+        )
+    )
+
+
+def _merch_tag_map():
+    grouped = {}
+    for link in MerchandiseTag.query.all():
+        grouped.setdefault(link.item_id, set()).add(link.tag_id)
+    return grouped
+
+
+def _missed_questions():
+    rows = (
+        db.session.query(ChatbotQuery.message, func.count())
+        .filter(ChatbotQuery.matched_faq_id.is_(None), ChatbotQuery.message != "")
+        .group_by(ChatbotQuery.message)
+        .order_by(func.count().desc())
+        .limit(8)
+        .all()
+    )
+    return [{"message": message, "count": count} for message, count in rows]
+
+
+def _picked_fandom(category):
+    raw = request.form.get("fandom_id", "").strip()
+    if not raw:
+        return None, None
+    if not raw.isdigit():
+        return None, "Choose a fandom from the list."
+    fan = db.session.get(Fandom, int(raw))
+    if fan is None or not fan.is_active or (category and fan.category_id != category.category_id):
+        return None, "Choose an active fandom in the same category."
+    return fan, None
+
+
+@bp.route("/admin/fandoms", methods=["POST"])
+def admin_fandom_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    name, error = _clean_name(request.form.get("name"), 2, 120, "Fandom name")
+    description, desc_error = _optional_text(request.form.get("description"), 500, "Description")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
+    if error or desc_error:
+        return _desk_redirect("fandoms", error or desc_error)
+    if category is None:
+        return _desk_redirect("fandoms", "Choose a category.")
+    clash = Fandom.query.filter(func.lower(Fandom.name) == name.lower(), Fandom.category_id == category.category_id).first()
+    if clash:
+        return _desk_redirect("fandoms", "That fandom already exists in this category.")
+    row = Fandom(category_id=category.category_id, name=name, slug=_named_slug(Fandom, name), description=description, is_active=True)
+    db.session.add(row)
+    _admin_log(user, "fandom.create", name)
+    db.session.commit()
+    return _desk_redirect("fandoms")
+
+
+@bp.route("/admin/fandoms/<int:fandom_id>", methods=["POST"])
+def admin_fandom_update(fandom_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(Fandom, fandom_id)
+    if row is None:
+        return _desk_redirect("fandoms", "That fandom no longer exists.")
+    if request.form.get("action") == "hide":
+        row.is_active = False
+        _admin_log(user, "fandom.hide", row.name)
+        db.session.commit()
+        return _desk_redirect("fandoms")
+    if request.form.get("action") == "show":
+        row.is_active = True
+        _admin_log(user, "fandom.show", row.name)
+        db.session.commit()
+        return _desk_redirect("fandoms")
+    name, error = _clean_name(request.form.get("name"), 2, 120, "Fandom name")
+    description, desc_error = _optional_text(request.form.get("description"), 500, "Description")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
+    if error or desc_error:
+        return _desk_redirect("fandoms", error or desc_error, fandom_id)
+    if category is None:
+        return _desk_redirect("fandoms", "Choose a category.", fandom_id)
+    clash = Fandom.query.filter(func.lower(Fandom.name) == name.lower(), Fandom.category_id == category.category_id, Fandom.fandom_id != row.fandom_id).first()
+    if clash:
+        return _desk_redirect("fandoms", "That fandom already exists in this category.", fandom_id)
+    row.name = name
+    row.category_id = category.category_id
+    row.description = description
+    _admin_log(user, "fandom.edit", name)
+    db.session.commit()
+    return _desk_redirect("fandoms")
+
+
+@bp.route("/admin/fandoms/<int:fandom_id>/delete", methods=["POST"])
+def admin_fandom_delete(fandom_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(Fandom, fandom_id)
+    if row is None:
+        return _desk_redirect("fandoms", "That fandom no longer exists.")
+    if _fandom_in_use(fandom_id):
+        row.is_active = False
+        _admin_log(user, "fandom.hide", row.name)
+        db.session.commit()
+        return _desk_redirect("fandoms", "This fandom still has titles, so it was hidden instead of deleted.")
+    name = row.name
+    db.session.delete(row)
+    _admin_log(user, "fandom.delete", name)
+    db.session.commit()
+    return _desk_redirect("fandoms")
+
+
+@bp.route("/admin/characters", methods=["POST"])
+def admin_character_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    name, error = _clean_name(request.form.get("name"), 2, 150, "Character name")
+    alias, alias_error = _optional_text(request.form.get("alias"), 150, "Alias")
+    bio, bio_error = _optional_text(request.form.get("bio"), 2000, "Bio")
+    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
+    if any((error, alias_error, bio_error, image_error)):
+        return _desk_redirect("characters", error or alias_error or bio_error or image_error)
+    if category is None:
+        return _desk_redirect("characters", "Choose a category.")
+    fan, fan_error = _picked_fandom(category)
+    if fan_error:
+        return _desk_redirect("characters", fan_error)
+    row = CharacterProfile(category_id=category.category_id, fandom_id=fan.fandom_id if fan else None, name=name, alias=alias, bio=bio, image_url=image)
+    db.session.add(row)
+    _admin_log(user, "character.create", name)
+    db.session.commit()
+    return _desk_redirect("characters")
+
+
+@bp.route("/admin/characters/<int:character_id>", methods=["POST"])
+def admin_character_update(character_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(CharacterProfile, character_id)
+    if row is None:
+        return _desk_redirect("characters", "That character no longer exists.")
+    if request.form.get("action") == "delete":
+        name = row.name
+        db.session.delete(row)
+        _admin_log(user, "character.delete", name)
+        db.session.commit()
+        return _desk_redirect("characters")
+    name, error = _clean_name(request.form.get("name"), 2, 150, "Character name")
+    alias, alias_error = _optional_text(request.form.get("alias"), 150, "Alias")
+    bio, bio_error = _optional_text(request.form.get("bio"), 2000, "Bio")
+    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
+    if any((error, alias_error, bio_error, image_error)):
+        return _desk_redirect("characters", error or alias_error or bio_error or image_error, character_id)
+    if category is None:
+        return _desk_redirect("characters", "Choose a category.", character_id)
+    fan, fan_error = _picked_fandom(category)
+    if fan_error:
+        return _desk_redirect("characters", fan_error, character_id)
+    row.name = name
+    row.alias = alias
+    row.bio = bio
+    row.image_url = image
+    row.category_id = category.category_id
+    row.fandom_id = fan.fandom_id if fan else None
+    _admin_log(user, "character.edit", name)
+    db.session.commit()
+    return _desk_redirect("characters")
+
+
+def _merch_tags(item):
+    MerchandiseTag.query.filter_by(item_id=item.item_id).delete()
+    for raw in request.form.getlist("tags"):
+        if raw.isdigit():
+            tag = db.session.get(Tag, int(raw))
+            if tag:
+                db.session.add(MerchandiseTag(item_id=item.item_id, tag_id=tag.tag_id))
+
+
+@bp.route("/admin/merchandise", methods=["POST"])
+def admin_merch_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    name, error = _clean_name(request.form.get("name"), 2, 200, "Merchandise name")
+    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    reference, ref_error = _optional_url(request.form.get("reference_url"), "Reference link")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
+    release, release_error = _optional_date(request.form.get("release_date"))
+    if any((error, desc_error, image_error, ref_error, release_error)):
+        return _desk_redirect("merchandise", error or desc_error or image_error or ref_error or release_error)
+    if category is None:
+        return _desk_redirect("merchandise", "Choose a category.")
+    fan, fan_error = _picked_fandom(category)
+    if fan_error:
+        return _desk_redirect("merchandise", fan_error)
+    row = MerchandiseItem(
+        category_id=category.category_id,
+        fandom_id=fan.fandom_id if fan else None,
+        name=name,
+        description=description,
+        image_url=image,
+        reference_url=reference,
+        release_date=release,
+        is_upcoming=request.form.get("upcoming") == "yes",
+    )
+    db.session.add(row)
+    db.session.flush()
+    _merch_tags(row)
+    _admin_log(user, "merch.create", name)
+    db.session.commit()
+    return _desk_redirect("merchandise")
+
+
+@bp.route("/admin/merchandise/<int:item_id>", methods=["POST"])
+def admin_merch_update(item_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(MerchandiseItem, item_id)
+    if row is None:
+        return _desk_redirect("merchandise", "That item no longer exists.")
+    if request.form.get("action") == "delete":
+        name = row.name
+        db.session.delete(row)
+        _admin_log(user, "merch.delete", name)
+        db.session.commit()
+        return _desk_redirect("merchandise")
+    name, error = _clean_name(request.form.get("name"), 2, 200, "Merchandise name")
+    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    reference, ref_error = _optional_url(request.form.get("reference_url"), "Reference link")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
+    release, release_error = _optional_date(request.form.get("release_date"))
+    if any((error, desc_error, image_error, ref_error, release_error)):
+        return _desk_redirect("merchandise", error or desc_error or image_error or ref_error or release_error, item_id)
+    if category is None:
+        return _desk_redirect("merchandise", "Choose a category.", item_id)
+    fan, fan_error = _picked_fandom(category)
+    if fan_error:
+        return _desk_redirect("merchandise", fan_error, item_id)
+    row.name = name
+    row.description = description
+    row.image_url = image
+    row.reference_url = reference
+    row.category_id = category.category_id
+    row.fandom_id = fan.fandom_id if fan else None
+    row.release_date = release
+    row.is_upcoming = request.form.get("upcoming") == "yes"
+    _merch_tags(row)
+    _admin_log(user, "merch.edit", name)
+    db.session.commit()
+    return _desk_redirect("merchandise")
+
+
+def _optional_date(value):
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    try:
+        return date.fromisoformat(text), None
+    except ValueError:
+        return None, "Release date must look like 2026-09-25."
+
+
+def _required_when(value):
+    text = (value or "").strip()
+    if not text:
+        return None, "Start time is required."
+    try:
+        return datetime.fromisoformat(text), None
+    except ValueError:
+        return None, "Start time must be a valid date and time."
+
+
+def _optional_when(value):
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    try:
+        return datetime.fromisoformat(text), None
+    except ValueError:
+        return None, "End time must be a valid date and time."
+
+
+def _coord(value, low, high, label):
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    try:
+        number = float(text)
+    except ValueError:
+        return None, f"{label} must be a number."
+    if number < low or number > high:
+        return None, f"{label} must be between {low} and {high}."
+    return number, None
+
+
+EVENT_TYPES = ("convention", "concert", "meetup", "festival", "expo", "other")
+
+
+@bp.route("/admin/events", methods=["POST"])
+def admin_event_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    title, error = _clean_name(request.form.get("title"), 2, 200, "Event title")
+    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    city, city_error = _clean_name(request.form.get("city"), 2, 100, "City")
+    start, start_error = _required_when(request.form.get("start_at"))
+    end, end_error = _optional_when(request.form.get("end_at"))
+    ticket, ticket_error = _optional_url(request.form.get("ticket_url"), "Ticket link")
+    lat, lat_error = _coord(request.form.get("latitude"), -90, 90, "Latitude")
+    lng, lng_error = _coord(request.form.get("longitude"), -180, 180, "Longitude")
+    kind = request.form.get("event_type", "other")
+    if kind not in EVENT_TYPES:
+        kind = "other"
+    problems = [error, desc_error, city_error, start_error, end_error, ticket_error, lat_error, lng_error]
+    if any(problems):
+        return _desk_redirect("events", next(item for item in problems if item))
+    if end and start and end < start:
+        return _desk_redirect("events", "End time must be after the start time.")
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
+    fan, fan_error = _picked_fandom(category)
+    if fan_error:
+        return _desk_redirect("events", fan_error)
+    row = Event(
+        category_id=category.category_id if category else None,
+        fandom_id=fan.fandom_id if fan else None,
+        title=title,
+        description=description,
+        event_type=kind,
+        venue=(request.form.get("venue") or "").strip()[:255] or None,
+        address=(request.form.get("address") or "").strip()[:255] or None,
+        city=city,
+        country=(request.form.get("country") or "").strip()[:100] or None,
+        latitude=lat,
+        longitude=lng,
+        start_at=start,
+        end_at=end,
+        ticket_url=ticket,
+        created_by=user.user_id,
+    )
+    db.session.add(row)
+    _admin_log(user, "event.create", title)
+    db.session.commit()
+    return _desk_redirect("events")
+
+
+@bp.route("/admin/events/<int:event_id>", methods=["POST"])
+def admin_event_update(event_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(Event, event_id)
+    if row is None:
+        return _desk_redirect("events", "That event no longer exists.")
+    if request.form.get("action") == "delete":
+        title = row.title
+        db.session.delete(row)
+        _admin_log(user, "event.delete", title)
+        db.session.commit()
+        return _desk_redirect("events")
+    title, error = _clean_name(request.form.get("title"), 2, 200, "Event title")
+    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    city, city_error = _clean_name(request.form.get("city"), 2, 100, "City")
+    start, start_error = _required_when(request.form.get("start_at"))
+    end, end_error = _optional_when(request.form.get("end_at"))
+    ticket, ticket_error = _optional_url(request.form.get("ticket_url"), "Ticket link")
+    lat, lat_error = _coord(request.form.get("latitude"), -90, 90, "Latitude")
+    lng, lng_error = _coord(request.form.get("longitude"), -180, 180, "Longitude")
+    kind = request.form.get("event_type", "other")
+    if kind not in EVENT_TYPES:
+        kind = "other"
+    problems = [error, desc_error, city_error, start_error, end_error, ticket_error, lat_error, lng_error]
+    if any(problems):
+        return _desk_redirect("events", next(item for item in problems if item), event_id)
+    if end and start and end < start:
+        return _desk_redirect("events", "End time must be after the start time.", event_id)
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
+    fan, fan_error = _picked_fandom(category)
+    if fan_error:
+        return _desk_redirect("events", fan_error, event_id)
+    row.title = title
+    row.description = description
+    row.city = city
+    row.event_type = kind
+    row.venue = (request.form.get("venue") or "").strip()[:255] or None
+    row.address = (request.form.get("address") or "").strip()[:255] or None
+    row.country = (request.form.get("country") or "").strip()[:100] or None
+    row.latitude = lat
+    row.longitude = lng
+    row.start_at = start
+    row.end_at = end
+    row.ticket_url = ticket
+    row.category_id = category.category_id if category else None
+    row.fandom_id = fan.fandom_id if fan else None
+    _admin_log(user, "event.edit", title)
+    db.session.commit()
+    return _desk_redirect("events")
+
+
+@bp.route("/admin/tags", methods=["POST"])
+def admin_tag_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    name, error = _clean_name(request.form.get("name"), 2, 60, "Tag name")
+    if error:
+        return _desk_redirect("tags", error)
+    if Tag.query.filter(func.lower(Tag.name) == name.lower()).first():
+        return _desk_redirect("tags", "That tag already exists.")
+    db.session.add(Tag(name=name))
+    _admin_log(user, "tag.create", name)
+    db.session.commit()
+    return _desk_redirect("tags")
+
+
+@bp.route("/admin/tags/<int:tag_id>", methods=["POST"])
+def admin_tag_update(tag_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(Tag, tag_id)
+    if row is None:
+        return _desk_redirect("tags", "That tag no longer exists.")
+    if request.form.get("action") == "delete":
+        used = MerchandiseTag.query.filter_by(tag_id=tag_id).first() or db.session.query(ContentTag).filter_by(tag_id=tag_id).first()
+        if used:
+            return _desk_redirect("tags", "This tag is still on a title or merchandise item.")
+        name = row.name
+        db.session.delete(row)
+        _admin_log(user, "tag.delete", name)
+        db.session.commit()
+        return _desk_redirect("tags")
+    name, error = _clean_name(request.form.get("name"), 2, 60, "Tag name")
+    if error:
+        return _desk_redirect("tags", error, tag_id)
+    clash = Tag.query.filter(func.lower(Tag.name) == name.lower(), Tag.tag_id != row.tag_id).first()
+    if clash:
+        return _desk_redirect("tags", "That tag already exists.", tag_id)
+    row.name = name
+    _admin_log(user, "tag.edit", name)
+    db.session.commit()
+    return _desk_redirect("tags")
+
+
+@bp.route("/admin/faqs", methods=["POST"])
+def admin_faq_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    question, q_error = _optional_text(request.form.get("question"), 500, "Question")
+    answer, a_error = _optional_text(request.form.get("answer"), 2000, "Answer")
+    keywords, k_error = _optional_text(request.form.get("keywords"), 500, "Keywords")
+    if not question:
+        q_error = q_error or "Question is required."
+    if not answer:
+        a_error = a_error or "Answer is required."
+    if q_error or a_error or k_error:
+        return _desk_redirect("faqs", q_error or a_error or k_error)
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
+    row = ChatbotFaq(
+        category_id=category.category_id if category else None,
+        question=question,
+        answer=answer,
+        keywords=keywords,
+        is_active=request.form.get("active") == "yes",
+        created_by=user.user_id,
+    )
+    db.session.add(row)
+    _admin_log(user, "faq.create", question[:80])
+    db.session.commit()
+    return _desk_redirect("faqs")
+
+
+@bp.route("/admin/faqs/<int:faq_id>", methods=["POST"])
+def admin_faq_update(faq_id):
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    row = db.session.get(ChatbotFaq, faq_id)
+    if row is None:
+        return _desk_redirect("faqs", "That FAQ no longer exists.")
+    if request.form.get("action") == "delete":
+        db.session.delete(row)
+        _admin_log(user, "faq.delete", row.question[:80])
+        db.session.commit()
+        return _desk_redirect("faqs")
+    question, q_error = _optional_text(request.form.get("question"), 500, "Question")
+    answer, a_error = _optional_text(request.form.get("answer"), 2000, "Answer")
+    keywords, k_error = _optional_text(request.form.get("keywords"), 500, "Keywords")
+    if not question:
+        q_error = q_error or "Question is required."
+    if not answer:
+        a_error = a_error or "Answer is required."
+    if q_error or a_error or k_error:
+        return _desk_redirect("faqs", q_error or a_error or k_error, faq_id)
+    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
+    row.question = question
+    row.answer = answer
+    row.keywords = keywords
+    row.category_id = category.category_id if category else None
+    row.is_active = request.form.get("active") == "yes"
+    _admin_log(user, "faq.edit", question[:80])
+    db.session.commit()
+    return _desk_redirect("faqs")
 
 
 @bp.route("/admin/users/<int:user_id>", methods=["POST"])

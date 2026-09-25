@@ -1,9 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="fit-page">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Fan Hub Plus{% endblock %}</title>
+    <style>html.hold-scroll body { visibility: hidden; }</style>
+    <script>
+      (function () {
+        var key = "fanhub-scroll";
+        try {
+          var raw = sessionStorage.getItem(key);
+          if (!raw) return;
+          var data = JSON.parse(raw);
+          if (!data || data.path !== location.pathname) return;
+          sessionStorage.removeItem(key);
+          if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+          document.documentElement.style.scrollBehavior = "auto";
+          document.documentElement.classList.add("hold-scroll");
+          var place = function () {
+            window.scrollTo(0, data.y || 0);
+            document.documentElement.classList.remove("hold-scroll");
+          };
+          if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", place);
+          else place();
+          window.addEventListener("load", place);
+        } catch (err) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,8 +35,9 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v=15"
+      href="{{ url_for('static', filename='css/style.css') }}?v=37"
     />
+    {% block extra_head %}{% endblock %}
     <link
       rel="icon"
       href="{{ url_for('static', filename='favicon.svg') }}"
@@ -54,9 +78,12 @@
         <source src="{{ url_for('static', filename='video/samurai-wind.mp4') }}?v=2" type="video/mp4" />
       </video>
     </div>
+    <div class="fit-root">
     <a class="skip" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="header-bar">
+        <div class="header-fit">
+        {% set back = request.full_path[:-1] if request.full_path.endswith('?') else request.full_path %}
         <a class="mark" href="{{ url_for('main.home') }}">Fan Hub <em>Plus</em></a>
         <nav class="site-nav" aria-label="Primary">
           <a
@@ -80,9 +107,14 @@
             >Explore</a
           >
           <a
+            href="{{ url_for('main.media_center') }}"
+            {% if request.endpoint == 'main.media_center' %}aria-current="page"{% endif %}
+            >Media</a
+          >
+          <a
             href="{{ url_for('main.news') }}"
             {% if request.endpoint == 'main.news' %}aria-current="page"{% endif %}
-            >News</a
+            >Featured</a
           >
           <a
             href="{{ url_for('main.characters') }}"
@@ -95,19 +127,55 @@
             >Merch</a
           >
           <a
+            href="{{ url_for('account.submissions') }}"
+            {% if request.endpoint == 'account.submissions' %}aria-current="page"{% endif %}
+            >Fan desk</a
+          >
+          <a
             href="{{ url_for('main.events') }}"
             {% if request.endpoint == 'main.events' %}aria-current="page"{% endif %}
             >Events</a
           >
-          {% if current_user %}
-          <a href="{{ url_for('account.dashboard') if current_user.is_member else url_for('account.admin_home') }}">{{ current_user.name.split(' ')[0] if current_user.is_member else 'Admin' }}</a>
-          <form class="account-nav" method="post" action="{{ url_for('account.logout') }}">
-            <button type="submit">Log out</button>
-          </form>
-          {% else %}
-          <a href="{{ url_for('account.login') }}">Sign in</a>
-          {% endif %}
         </nav>
+        <div class="header-end">
+          <details class="font-menu">
+            <summary aria-label="Text size"><span aria-hidden="true">A</span></summary>
+            <form class="nav-menu" method="post" action="{{ url_for('account.display') }}">
+              <input type="hidden" name="next" value="{{ back }}" />
+              <input type="hidden" name="theme" value="{{ display.theme }}" />
+              <button type="submit" name="font" value="small" aria-pressed="{{ 'true' if display.font == 'small' else 'false' }}">Small</button>
+              <button type="submit" name="font" value="medium" aria-pressed="{{ 'true' if display.font == 'medium' else 'false' }}">Medium</button>
+              <button type="submit" name="font" value="large" aria-pressed="{{ 'true' if display.font == 'large' else 'false' }}">Large</button>
+            </form>
+          </details>
+          {% if current_user %}
+          <details class="nav-account">
+            <summary aria-label="{{ current_user.name }}">
+              {% if current_user.avatar_path %}
+                <img src="{{ url_for('static', filename=current_user.avatar_path) }}" alt="" />
+              {% else %}
+                <span>{{ current_user.name[:1] }}</span>
+              {% endif %}
+            </summary>
+            <div class="nav-menu">
+              {% if current_user.is_member %}
+                <a href="{{ url_for('account.dashboard') }}" {% if request.endpoint == 'account.dashboard' %}aria-current="page"{% endif %}>Bookmarks</a>
+                <a href="{{ url_for('account.profile') }}" {% if request.endpoint == 'account.profile' %}aria-current="page"{% endif %}>Profile</a>
+                <a href="{{ url_for('account.feedback') }}" {% if request.endpoint == 'account.feedback' %}aria-current="page"{% endif %}>Feedback</a>
+              {% else %}
+                <a href="{{ url_for('account.admin_home') }}" {% if request.endpoint and request.endpoint.startswith('account.admin') and request.args.get('tab', 'queue') != 'queue' %}aria-current="page"{% endif %}>Admin</a>
+                <a href="{{ url_for('account.admin_home', tab='queue') }}" {% if request.endpoint == 'account.admin_home' and request.args.get('tab', 'queue') == 'queue' %}aria-current="page"{% endif %}>Fan review</a>
+              {% endif %}
+              <form method="post" action="{{ url_for('account.logout') }}">
+                <button type="submit">Log out</button>
+              </form>
+            </div>
+          </details>
+          {% else %}
+          <a class="header-signin" href="{{ url_for('account.login', next=back) if request.endpoint not in ['account.login', 'account.register', 'account.forgot', 'account.reset', 'account.admin_login'] else url_for('account.login') }}">Sign in</a>
+          {% endif %}
+        </div>
+        </div>
       </div>
     </header>
     <main id="main">{% block content %}{% endblock %}</main>
@@ -126,11 +194,11 @@
         <section class="footer-col">
           <nav class="site-nav footer-nav footer-links" aria-label="Useful links">
             <a href="{{ url_for('main.explore') }}">Explore</a>
-            <a href="{{ url_for('main.news') }}">News</a>
+            <a href="{{ url_for('main.news') }}">Featured</a>
             <a href="{{ url_for('main.events') }}">Events</a>
             <a href="{{ url_for('main.sitemap') }}">Sitemap</a>
             <a href="{{ url_for('account.register') }}">Register</a>
-            <a href="{{ url_for('account.login') }}">Sign in</a>
+            <a href="{{ url_for('account.login', next=back) if request.endpoint not in ['account.login', 'account.register', 'account.forgot', 'account.reset', 'account.admin_login'] else url_for('account.login') }}">Sign in</a>
             <button class="footer-chat" type="button">Support</button>
             <span class="footer-gap" aria-hidden="true"></span>
             {% for category in nav_categories %}
@@ -197,7 +265,7 @@
       <div class="support-prompts">
         <button type="button" data-prompt="Show me around">Show me around</button>
         <button type="button" data-prompt="How do I search?">How do I search?</button>
-        <button type="button" data-prompt="What's new in anime?">Anime news</button>
+        <button type="button" data-prompt="What's new in anime?">What's featured?</button>
       </div>
       <form class="support-form">
         <label class="sr-only" for="support-q">Message support</label>
@@ -205,7 +273,9 @@
         <button type="submit">Send</button>
       </form>
     </section>
+    </div>
     <script src="{{ url_for('static', filename='js/support.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/forms.js') }}?v=8"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
     <script type="module" src="{{ url_for('static', filename='js/fx.js') }}"></script>

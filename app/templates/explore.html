@@ -30,22 +30,25 @@
       <ul class="color-wall">
         {% for series in shelf %}
           <li style="--accent: {{ series.accent }}; animation-delay: {{ loop.index0 * 0.05 }}s">
-            <article class="color-tile">
+            <a
+              class="color-tile"
+              href="{% if series.slug %}{{ url_for('main.content_detail', slug=series.slug) }}{% else %}{{ url_for('main.explore', category=filters.category, q=series.name) }}{% endif %}"
+            >
               {% if series.image %}
                 <img src="{{ url_for('static', filename='images/series/' + series.image) }}" alt="" />
               {% endif %}
               <span>{{ series.name }}</span>
-            </article>
+            </a>
           </li>
         {% endfor %}
       </ul>
     </section>
   {% endif %}
 
-  <section class="filter-stage">
+  <section class="filter-stage" id="filters">
     <header class="filter-lead">
       <h2>{% if category_name %}Search {{ category_name }}{% else %}Search the shelves{% endif %}</h2>
-      <p>{% if can_filter %}Title, genre, year, type, and how loved a piece is.{% else %}Guests can search by keyword, category, and type. Sign in for genre, year, popularity, and extra sorts.{% endif %}</p>
+      <p>{% if can_filter %}Title, category, fandom, genre, year, type, popularity, and featured. Sort by newest, most loved, or A to Z.{% else %}Guests can search by keyword, category, and type. Sign in for genre, year, fandom, popularity, featured, and extra sorts.{% endif %}</p>
     </header>
   <form class="filters" method="get" action="{{ url_for('main.explore') }}">
     <div class="filter-search">
@@ -60,6 +63,15 @@
           <option value="{{ category.slug }}" {% if filters.category == category.slug %}selected{% endif %}>
             {{ category.name }}
           </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="fandom">Fandom</label>
+      <select id="fandom" name="fandom" {% if not can_filter %}disabled{% endif %}>
+        <option value="">All fandoms</option>
+        {% for fan in fandoms %}
+          <option value="{{ fan.slug }}" {% if filters.fandom == fan.slug %}selected{% endif %}>{{ fan.name }}</option>
         {% endfor %}
       </select>
     </div>
@@ -85,7 +97,7 @@
       <label for="type">Content type</label>
       <select id="type" name="type">
         <option value="">All types</option>
-        {% for type_name in ["article", "video", "audio", "image"] %}
+        {% for type_name in content_types %}
           <option value="{{ type_name }}" {% if filters.type == type_name %}selected{% endif %}>
             {{ type_name|capitalize }}
           </option>
@@ -99,6 +111,13 @@
         <option value="iconic" {% if filters.popularity == "iconic" %}selected{% endif %}>Iconic (90+)</option>
         <option value="notable" {% if filters.popularity == "notable" %}selected{% endif %}>Notable (75–89)</option>
         <option value="rising" {% if filters.popularity == "rising" %}selected{% endif %}>Rising (under 75)</option>
+      </select>
+    </div>
+    <div>
+      <label for="featured">Featured</label>
+      <select id="featured" name="featured" {% if not can_filter %}disabled{% endif %}>
+        <option value="">Featured or not</option>
+        <option value="yes" {% if filters.featured == "yes" %}selected{% endif %}>Featured only</option>
       </select>
     </div>
     <div>
@@ -117,6 +136,14 @@
       {% endif %}
     </div>
   </form>
+  {% if chips %}
+    <ul class="chip-row" aria-label="Active filters">
+      {% for chip in chips %}
+        <li><a href="{{ chip.href }}">{{ chip.label }} ×</a></li>
+      {% endfor %}
+      <li><a href="{{ url_for('main.explore') }}">Clear all</a></li>
+    </ul>
+  {% endif %}
   </section>
 
   {% if items %}
@@ -156,9 +183,9 @@
     </ul>
     {% if pages > 1 %}
       <nav class="crumbs" aria-label="Pages">
-        {% if page > 1 %}<a href="{{ url_for('main.explore', page=page-1, q=filters.q, category=filters.category, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, sort=sort) }}">Previous</a>{% endif %}
+        {% if page > 1 %}<a href="{{ url_for('main.explore', page=page-1, q=filters.q, category=filters.category, fandom=filters.fandom, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, featured=filters.featured, sort=sort) }}">Previous</a>{% endif %}
         <span>Page {{ page }} of {{ pages }}</span>
-        {% if page < pages %}<a href="{{ url_for('main.explore', page=page+1, q=filters.q, category=filters.category, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, sort=sort) }}">Next</a>{% endif %}
+        {% if page < pages %}<a href="{{ url_for('main.explore', page=page+1, q=filters.q, category=filters.category, fandom=filters.fandom, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, featured=filters.featured, sort=sort) }}">Next</a>{% endif %}
       </nav>
     {% endif %}
   {% else %}

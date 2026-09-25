@@ -49,7 +49,7 @@ def create_app() -> Flask:
     from .account import bp as account_bp
     from .account import current_user
     from .routes import bp as pages_bp
-    from .seed import seed_catalog_if_empty, seed_demo_users, seed_reference_data, seed_showcase_if_empty
+    from .seed import seed_catalog_if_empty, seed_demo_users, seed_detail_gaps, seed_reference_data, seed_showcase_if_empty
     from .services_auth import seed_admin
 
     app.register_blueprint(pages_bp)
@@ -140,6 +140,7 @@ def create_app() -> Flask:
         seed_reference_data(db.session)
         seed_catalog_if_empty(db.session)
         seed_showcase_if_empty(db.session)
+        seed_detail_gaps(db.session)
         seed_demo_users(db.session)
 
     return app

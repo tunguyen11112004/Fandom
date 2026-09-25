@@ -1,8 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ item.name }} · Fan Hub Plus{% endblock %}
-{% block body_class %}stack-anime{% endblock %}
+{% block body_class %}cast-room{% endblock %}
 {% block content %}
-    <header class="page-head">
+  <article class="dossier">
+    {% if item.image_url %}
+      <figure>
+        <img src="{{ url_for('static', filename='images/catalog/' + item.image_url) }}" alt="{{ item.name }}" />
+      </figure>
+    {% endif %}
+    <div class="dossier-copy">
     <nav class="crumbs" aria-label="Breadcrumb">
       <a href="{{ url_for('main.home') }}">Home</a>
       <span aria-hidden="true">/</span>
@@ -13,9 +19,17 @@
     <p class="kicker">{% if fandom %}{{ fandom.name }}{% elif category %}{{ category.name }}{% endif %}</p>
     <h1>{{ item.name }}</h1>
     {% if item.alias %}<p class="lede">Also known as {{ item.alias }}</p>{% endif %}
-    </header>
-  <article class="detail">
-    <p>{{ item.bio }}</p>
+    <dl class="stat-row">
+      {% if category %}<div><dt>Shelf</dt><dd>{{ category.name }}</dd></div>{% endif %}
+      {% if fandom %}<div><dt>Fandom</dt><dd>{{ fandom.name }}</dd></div>{% endif %}
+      {% if item.alias %}<div><dt>Alias</dt><dd>{{ item.alias }}</dd></div>{% endif %}
+      <div><dt>Views</dt><dd>{{ item.view_count }}</dd></div>
+    </dl>
+    <div class="body-copy">
+      {% for paragraph in (item.bio or '').split('\n\n') %}
+        {% if paragraph.strip() %}<p>{{ paragraph.strip() }}</p>{% endif %}
+      {% endfor %}
+    </div>
     <form class="bookmark-bar" method="post" action="{{ url_for('account.bookmark_character', character_id=item.character_id) }}">
       {% if current_user and current_user.is_member %}
         <label for="note">Note</label>
@@ -26,6 +40,7 @@
         <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a>
       {% endif %}
     </form>
+    </div>
   </article>
   {% if related %}
     <section class="section">
@@ -34,6 +49,9 @@
         {% for other in related %}
           <li>
             <a class="content-card" href="{{ url_for('main.content_detail', slug=other.slug) }}">
+              {% if other.image_path %}
+                <img src="{{ url_for('static', filename='images/catalog/' + other.image_path) }}" alt="" />
+              {% endif %}
               <div class="card-copy">
                 <span class="type">{{ other.content_type }}</span>
                 <h3>{{ other.title }}</h3>

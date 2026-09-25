@@ -5,7 +5,6 @@
 <section class="auth-panel desk-panel">
   <p class="kicker">Profile</p>
   <h1>{{ user.name }}</h1>
-  {% if error %}<p class="auth-error">{{ error }}</p>{% endif %}
   {% if user.avatar_path %}
     <img class="avatar" src="{{ url_for('static', filename=user.avatar_path) }}" alt="" />
   {% endif %}
@@ -54,6 +53,7 @@
     <label class="span-2" for="avatar">Avatar, optional
       <input id="avatar" name="avatar" type="file" accept="image/png,image/jpeg,image/webp" />
     </label>
+    {% if error %}<p class="auth-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Save</button>
   </form>
   <p class="auth-links"><a href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>

@@ -19,6 +19,9 @@
     slides[index].classList.add("is-on");
     title.textContent = slides[index].dataset.title || "";
     meta.textContent = slides[index].dataset.meta || "";
+    if (slides[index].dataset.href) {
+      root.setAttribute("href", slides[index].dataset.href);
+    }
     if (bar) {
       bar.style.animation = "none";
       void bar.offsetWidth;
