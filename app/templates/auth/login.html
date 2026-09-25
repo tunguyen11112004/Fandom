@@ -18,9 +18,7 @@
     <a href="{{ url_for('account.register') }}">Register</a>
     <a href="{{ url_for('account.forgot') }}">Forgot password</a>
     <a href="{{ url_for('account.admin_login') }}">Admin gate</a>
-    <a href="{{ url_for('account.display') }}">Display</a>
   </p>
-  <p>Demo member: mina@fanhub.plus · MemberHub#2026</p>
   {% if error and 'Verify' in error %}
   <form method="post" action="{{ url_for('account.resend') }}">
     <button type="submit">Send a new verification link</button>

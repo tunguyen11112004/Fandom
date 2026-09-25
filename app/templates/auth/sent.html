@@ -5,10 +5,12 @@
 <section class="auth-panel">
   {% if purpose == "verify" %}
   <h1>Verify your email</h1>
-  <p>This demo has no outside mail server, so the one-time link is here. It lasts 24 hours.</p>
+  <p>We sent a confirmation link to your email. It lasts 24 hours.</p>
+  {% if link %}<p>This machine is not set up to deliver mail, so the same link is here too.</p>{% endif %}
   {% elif purpose == "reset" %}
-  <h1>If that email exists, a link is ready</h1>
-  <p>Reset links last 30 minutes and work once.</p>
+  <h1>Check your email</h1>
+  <p>If that account exists, we sent a reset link. It lasts 30 minutes and works once.</p>
+  {% if link %}<p>This machine is not set up to deliver mail, so the same link is here too.</p>{% endif %}
   {% else %}
   <h1>That link is no longer valid</h1>
   <p>Ask for a new one from register or forgot password.</p>

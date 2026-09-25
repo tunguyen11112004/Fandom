@@ -7,13 +7,13 @@
   <p>Name, email, and a password. We keep the password as a hash, never as plain text.</p>
   <form method="post">
     <label for="name">Name</label>
-    <input id="name" name="name" required autocomplete="name" />
+    <input id="name" name="name" required autocomplete="name" value="{{ name or '' }}" />
     <label for="email">Email</label>
-    <input id="email" name="email" type="email" required autocomplete="email" />
+    <input id="email" name="email" type="email" required autocomplete="email" value="{{ email or '' }}" />
     <label for="password">Password</label>
-    <input id="password" name="password" type="password" required autocomplete="new-password" />
+    <input id="password" name="password" type="password" required autocomplete="new-password" value="{{ password or '' }}" />
     <label for="confirm">Confirm password</label>
-    <input id="confirm" name="confirm" type="password" required autocomplete="new-password" />
+    <input id="confirm" name="confirm" type="password" required autocomplete="new-password" value="{{ confirm or '' }}" />
     {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Create account</button>
   </form>

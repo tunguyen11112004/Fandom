@@ -15,6 +15,8 @@ from flask import (
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 
+from .config import settings
+from .emailer import send_reset_email, send_verify_email
 from .extensions import db
 from .models import (
     ActivityLog,
@@ -82,12 +84,12 @@ def _strong(password):
     )
 
 
-def _issue(user, purpose, hours):
+def _issue(user, purpose, hours, raw=None):
     mapped = "email_verify" if purpose == "verify" else "password_reset"
     UserToken.query.filter_by(user_id=user.user_id, purpose=mapped, used_at=None).update(
         {"used_at": utcnow()}
     )
-    raw = new_raw_token()
+    raw = raw or new_raw_token()
     token = UserToken(
         user_id=user.user_id,
         purpose=mapped,
@@ -110,6 +112,10 @@ def _take(token_value, purpose):
 @bp.route("/register", methods=["GET", "POST"])
 def register():
     error = None
+    name = ""
+    email = ""
+    password = ""
+    confirm = ""
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip().lower()
@@ -132,9 +138,24 @@ def register():
             )
             db.session.add(user)
             db.session.commit()
-            token = _issue(user, "verify", 24)
-            return redirect(url_for("account.sent", purpose="verify", token=token))
-    return render_template("auth/register.html", error=error)
+            token = _issue(user, "verify", settings.email_verify_hours)
+            try:
+                send_verify_email(user.email, token)
+            except Exception:
+                current_app.logger.exception("verification email failed")
+            session["pending_email"] = user.email
+            target = {"purpose": "verify"}
+            if settings.email_backend != "smtp":
+                target["token"] = token
+            return redirect(url_for("account.sent", **target))
+    return render_template(
+        "auth/register.html",
+        error=error,
+        name=name,
+        email=email,
+        password=password,
+        confirm=confirm,
+    )
 
 
 @bp.route("/login", methods=["GET", "POST"])
@@ -168,8 +189,15 @@ def resend():
     email = (request.form.get("email") or session.get("pending_email") or "").strip().lower()
     user = User.query.filter_by(email=email).first()
     if user and not user.verified and not user.locked:
-        token = _issue(user, "verify", 24)
-        return redirect(url_for("account.sent", purpose="verify", token=token))
+        token = _issue(user, "verify", settings.email_verify_hours)
+        try:
+            send_verify_email(user.email, token)
+        except Exception:
+            current_app.logger.exception("verification email failed")
+        target = {"purpose": "verify"}
+        if settings.email_backend != "smtp":
+            target["token"] = token
+        return redirect(url_for("account.sent", **target))
     return redirect(url_for("account.sent", purpose="verify"))
 
 
@@ -181,14 +209,26 @@ def logout():
 
 @bp.route("/forgot", methods=["GET", "POST"])
 def forgot():
+    error = None
+    email = ""
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
-        user = User.query.filter_by(email=email).first()
-        token_value = None
-        if user and not user.locked:
-            token_value = _issue(user, "reset", 0.5)
-        return redirect(url_for("account.sent", purpose="reset", token=token_value or ""))
-    return render_template("auth/forgot.html")
+        if "@" not in email:
+            error = "Enter the email on the account."
+        else:
+            user = User.query.filter_by(email=email).first()
+            token = ""
+            if user and not user.locked:
+                token = _issue(user, "reset", settings.password_reset_minutes / 60)
+                try:
+                    send_reset_email(user.email, token)
+                except Exception:
+                    current_app.logger.exception("reset email failed")
+            target = {"purpose": "reset"}
+            if token and settings.email_backend != "smtp":
+                target["token"] = token
+            return redirect(url_for("account.sent", **target))
+    return render_template("auth/forgot.html", error=error, email=email)
 
 
 @bp.route("/sent")
