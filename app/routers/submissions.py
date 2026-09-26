@@ -50,6 +50,11 @@ def submit():
             raise AuthError(400, "not_found", "Fandom not found.")
     if body.content_type not in ("article", "video", "audio", "image", "trailer", "explainer"):
         raise AuthError(400, "invalid_type", "That content type is not valid.")
+    from app.account import _post_wait
+
+    wait = _post_wait(user)
+    if wait:
+        raise AuthError(429, "rate_limited", f"You can send 10 pieces every 12 hours. Try again in {wait}.")
     row = FanSubmission(
         user_id=user.user_id,
         category_id=body.category_id,
@@ -63,6 +68,9 @@ def submit():
         rights_confirmed=True,
         status="pending",
     )
+    from app.security import utcnow
+
+    row.created_at = utcnow()
     db.add(row)
     db.flush()
     log_activity(db, user.user_id, "submit_content", "submission", row.submission_id, body.content_type)
@@ -77,11 +85,16 @@ def resubmit(submission_id: int):
     row = db.get(FanSubmission, submission_id)
     if row is None or row.user_id != user.user_id:
         raise AuthError(404, "not_found", "Submission not found.")
-    if row.status != "rejected":
-        raise AuthError(400, "invalid_status", "Only a rejected submission can be sent again.")
+    if row.status not in {"rejected", "pending"}:
+        raise AuthError(400, "invalid_status", "Only a pending or returned piece can be edited.")
     body = parse_body(SubmissionIn)
     if not body.rights_confirmed:
         raise AuthError(400, "rights_required", "You must confirm you have the right to share this.")
+    from app.account import _edit_wait
+
+    wait = _edit_wait(row)
+    if wait:
+        raise AuthError(429, "rate_limited", f"You can edit a piece once every 5 minutes. Try again in {wait}.")
     row.category_id = body.category_id
     row.fandom_id = body.fandom_id
     row.content_type = body.content_type
@@ -95,6 +108,9 @@ def resubmit(submission_id: int):
     row.reject_reason = None
     row.reviewed_by = None
     row.reviewed_at = None
+    from app.security import utcnow
+
+    row.updated_at = utcnow()
     db.add(ModerationLog(submission_id=row.submission_id, admin_id=user.user_id, action="resubmitted"))
     log_activity(db, user.user_id, "resubmit_content", "submission", row.submission_id)
     db.commit()

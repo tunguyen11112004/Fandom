@@ -235,6 +235,7 @@ class Content(db.Model):
     images: Mapped[list["ContentImage"]] = relationship(cascade="all, delete-orphan")
     timeline: Mapped[list["ContentTimelineEntry"]] = relationship(cascade="all, delete-orphan")
     category: Mapped["Category"] = relationship(back_populates="contents")
+    fandom: Mapped["Fandom | None"] = relationship()
     genre_links: Mapped[list["ContentGenre"]] = relationship(cascade="all, delete-orphan")
 
     @property
@@ -283,7 +284,17 @@ class Content(db.Model):
     def image_path(self):
         from app.media import content_file
 
-        return content_file(self.slug) or (self.thumbnail_url.split("/")[-1] if self.thumbnail_url else None)
+        thumb = (self.thumbnail_url or "").strip()
+        if thumb.startswith(("http://", "https://")):
+            return None
+        return content_file(self.slug) or (thumb.split("/")[-1] if thumb else None)
+
+    @property
+    def poster_url(self):
+        thumb = (self.thumbnail_url or "").strip()
+        if thumb.startswith(("http://", "https://")):
+            return thumb
+        return None
 
     @property
     def image_credit(self):
@@ -552,14 +563,23 @@ class FanSubmission(db.Model):
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     rights_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cover_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    genre: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    tags: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    release_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timeline_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.user_id", ondelete="SET NULL"), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reject_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     published_content_id: Mapped[int | None] = mapped_column(ForeignKey("contents.content_id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     author: Mapped["User"] = relationship(foreign_keys=[user_id])
+    published_item: Mapped["Content | None"] = relationship(foreign_keys=[published_content_id])
     category: Mapped["Category"] = relationship()
+    fandom: Mapped["Fandom | None"] = relationship()
 
     @property
     def id(self):

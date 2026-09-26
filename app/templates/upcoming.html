@@ -1,11 +1,10 @@
 {% extends "base.html" %}
+{% from "_pager.html" import pager %}
 {% block title %}Upcoming · Fan Hub Plus{% endblock %}
 {% block body_class %}stack-gaming{% endblock %}
 {% block content %}
   <header class="page-head">
     <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('main.home') }}">Home</a>
-      <span aria-hidden="true">/</span>
       <a href="{{ url_for('main.merchandise') }}">Merchandise</a>
       <span aria-hidden="true">/</span>
       <span aria-current="page">Upcoming</span>
@@ -24,6 +23,7 @@
           </li>
         {% endfor %}
       </ul>
+      {{ pager(page, pages, 'main.upcoming', {'mpage': mpage} if mpage > 1 else {}) }}
     {% else %}
       <p class="empty-line">No dated catalog titles after today.</p>
     {% endif %}
@@ -39,6 +39,7 @@
           </li>
         {% endfor %}
       </ul>
+      {{ pager(mpage, mpages, 'main.upcoming', {'page': page} if page > 1 else {}, 'mpage') }}
     {% else %}
       <p class="empty-line">No upcoming merchandise rows yet.</p>
     {% endif %}

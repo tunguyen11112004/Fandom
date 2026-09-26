@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf" content="{{ csrf_token }}" />
     <title>{% block title %}Fan Hub Plus{% endblock %}</title>
     <style>html.hold-scroll body { visibility: hidden; }</style>
     <script>
@@ -35,7 +36,7 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v=37"
+      href="{{ url_for('static', filename='css/style.css') }}?v=70"
     />
     {% block extra_head %}{% endblock %}
     <link
@@ -92,18 +93,8 @@
             >Home</a
           >
           <a
-            href="{{ url_for('main.explore', category='anime') }}"
-            {% if request.args.get('category') == 'anime' %}aria-current="page"{% endif %}
-            >Anime</a
-          >
-          <a
-            href="{{ url_for('main.explore', category='manga') }}"
-            {% if request.args.get('category') == 'manga' %}aria-current="page"{% endif %}
-            >Manga</a
-          >
-          <a
             href="{{ url_for('main.explore') }}"
-            {% if request.endpoint in ['main.explore', 'main.content_detail'] and not request.args.get('category') %}aria-current="page"{% endif %}
+            {% if request.endpoint in ['main.explore', 'main.content_detail'] %}aria-current="page"{% endif %}
             >Explore</a
           >
           <a
@@ -127,14 +118,14 @@
             >Merch</a
           >
           <a
-            href="{{ url_for('account.submissions') }}"
-            {% if request.endpoint == 'account.submissions' %}aria-current="page"{% endif %}
-            >Fan desk</a
-          >
-          <a
             href="{{ url_for('main.events') }}"
             {% if request.endpoint == 'main.events' %}aria-current="page"{% endif %}
             >Events</a
+          >
+          <a
+            href="{{ url_for('account.submissions') }}"
+            {% if request.endpoint == 'account.submissions' %}aria-current="page"{% endif %}
+            >Contribute</a
           >
         </nav>
         <div class="header-end">
@@ -160,11 +151,12 @@
             <div class="nav-menu">
               {% if current_user.is_member %}
                 <a href="{{ url_for('account.dashboard') }}" {% if request.endpoint == 'account.dashboard' %}aria-current="page"{% endif %}>Bookmarks</a>
+                <a href="{{ url_for('account.sent_pieces') }}" {% if request.endpoint == 'account.sent_pieces' %}aria-current="page"{% endif %}>What you sent</a>
                 <a href="{{ url_for('account.profile') }}" {% if request.endpoint == 'account.profile' %}aria-current="page"{% endif %}>Profile</a>
                 <a href="{{ url_for('account.feedback') }}" {% if request.endpoint == 'account.feedback' %}aria-current="page"{% endif %}>Feedback</a>
               {% else %}
-                <a href="{{ url_for('account.admin_home') }}" {% if request.endpoint and request.endpoint.startswith('account.admin') and request.args.get('tab', 'queue') != 'queue' %}aria-current="page"{% endif %}>Admin</a>
-                <a href="{{ url_for('account.admin_home', tab='queue') }}" {% if request.endpoint == 'account.admin_home' and request.args.get('tab', 'queue') == 'queue' %}aria-current="page"{% endif %}>Fan review</a>
+                <a href="{{ url_for('account.admin_home', tab='dashboard') }}" {% if request.endpoint and request.endpoint.startswith('account.admin') and request.args.get('tab', 'dashboard') != 'review' %}aria-current="page"{% endif %}>Dashboard</a>
+                <a href="{{ url_for('account.admin_home', tab='review') }}" {% if request.endpoint == 'account.admin_home' and request.args.get('tab') == 'review' %}aria-current="page"{% endif %}>Fan review</a>
               {% endif %}
               <form method="post" action="{{ url_for('account.logout') }}">
                 <button type="submit">Log out</button>
@@ -178,6 +170,14 @@
         </div>
       </div>
     </header>
+    {% if site_notice %}<p class="site-notice" role="status">{{ site_notice }}</p>{% endif %}
+    {% with notices = get_flashed_messages(category_filter=["ok"]) %}
+      {% if notices %}
+        <div class="toast-stack" aria-live="polite">
+          {% for notice in notices %}<p class="toast" role="status">{{ notice }}</p>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
     <main id="main">{% block content %}{% endblock %}</main>
     <footer class="site-footer">
       <div class="footer-grid">
@@ -274,8 +274,9 @@
       </form>
     </section>
     </div>
-    <script src="{{ url_for('static', filename='js/support.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/forms.js') }}?v=8"></script>
+    <script src="https://cdn.ckeditor.com/ckeditor5/41.4.2/classic/ckeditor.js"></script>
+    <script src="{{ url_for('static', filename='js/support.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='js/forms.js') }}?v=19"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
     <script type="module" src="{{ url_for('static', filename='js/fx.js') }}"></script>

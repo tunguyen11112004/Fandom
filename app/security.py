@@ -44,6 +44,13 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def like_contains(value, limit=80):
+    """Bound a user search so % and _ are not LIKE wildcards. The value is still a parameter."""
+    text = "".join(ch for ch in (value or "") if ch not in "%_\\\x00")
+    text = " ".join(text.split())[:limit]
+    return f"%{text}%"
+
+
 def create_access_token(user_id: int, role: str, session_version: int = 1) -> str:
     payload = {
         "sub": str(user_id),

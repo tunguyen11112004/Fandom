@@ -1,4 +1,8 @@
-from flask import Flask, jsonify, render_template, request
+import secrets
+import time
+
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
+from markupsafe import Markup
 from flask_cors import CORS
 
 from app.config import settings
@@ -74,22 +78,77 @@ def create_app() -> Flask:
         else:
             app.register_blueprint(blueprint, url_prefix=PUBLIC_PREFIX)
 
+    @app.before_request
+    def guard_form_post():
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if request.path.startswith("/api/"):
+            return None
+        expected = session.get("csrf") or ""
+        sent = request.form.get("csrf") or request.headers.get("X-CSRF-Token") or ""
+        if expected and sent and secrets.compare_digest(sent, expected):
+            return None
+        if request.is_json or request.path.startswith("/support/"):
+            return jsonify(ok=False, error="The form expired. Refresh and try again."), 400
+        return "The form expired. Go back, refresh, and try again.", 400
+
+    @app.before_request
+    def slow_repeat_posts():
+        if request.method != "POST":
+            return None
+        if request.path.startswith("/api/") or request.path.startswith("/support/"):
+            return None
+        if request.path in {"/logout", "/display"}:
+            return None
+        now = time.time()
+        stamps = session.get("post_stamps") or {}
+        stamps = {key: stamp for key, stamp in stamps.items() if now - float(stamp) < 30}
+        last = float(stamps.get(request.path, 0) or 0)
+        if last and now - last < 3:
+            session["notice"] = "Please wait a moment before sending that again."
+            back = request.referrer if request.referrer and request.referrer.startswith(request.host_url) else url_for("main.home")
+            return redirect(back)
+        stamps[request.path] = now
+        session["post_stamps"] = stamps
+        return None
+
+    @app.after_request
+    def security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+    @app.template_filter("rich")
+    def rich_filter(value):
+        from .account import _clean_html
+
+        cleaned = _clean_html(value or "")
+        if cleaned and "<" not in cleaned:
+            cleaned = "<p>" + cleaned.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
+        return Markup(cleaned) if cleaned else Markup("")
+
     @app.context_processor
     def inject_user():
         from .models import Category, Event
 
         user = current_user()
+        notice = session.pop("notice", None)
         if user is not None:
             display = {"theme": user.theme or "dark", "font": user.font_size or "medium"}
         else:
-            from flask import session
-
             display = {
                 "theme": session.get("theme", "dark"),
                 "font": session.get("font", "medium"),
             }
+        token = session.get("csrf")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session["csrf"] = token
         return {
             "current_user": user,
+            "csrf_token": token,
+            "site_notice": notice,
             "display": display,
             "nav_categories": Category.query.order_by(Category.category_id).all(),
             "events": Event.query.order_by(Event.start_at.asc()).limit(8).all(),

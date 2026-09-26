@@ -2,18 +2,23 @@
 {% block title %}Register · Fan Hub Plus{% endblock %}
 {% block body_class %}stack-anime auth{% endblock %}
 {% block content %}
-<section class="auth-panel">
-  <h1>Become a member</h1>
-  <p>Name, email, and a password. We keep the password as a hash, never as plain text.</p>
+<section class="auth-panel gate">
+  <p class="fan-badge">Member gate</p>
+  <h1>Join <em>Fan Hub Plus</em></h1>
+  <p>Name, email, and a password. The password is stored as a hash.</p>
+  <nav class="gate-tabs" aria-label="Account">
+    <a href="{{ url_for('account.login') }}">Sign in</a>
+    <a href="{{ url_for('account.register') }}" aria-current="page">Register</a>
+  </nav>
   <form method="post">
     <label for="name">Name</label>
-    <input id="name" name="name" required autocomplete="name" value="{{ name or '' }}" />
+    <input id="name" name="name" required autocomplete="name" value="{{ name or '' }}" placeholder="Your name" />
     <label for="email">Email</label>
-    <input id="email" name="email" type="email" required autocomplete="email" value="{{ email or '' }}" />
+    <input id="email" name="email" type="email" required autocomplete="email" inputmode="email" value="{{ email or '' }}" placeholder="you@example.com" />
     <label for="password">Password</label>
-    <input id="password" name="password" type="password" required autocomplete="new-password" value="{{ password or '' }}" />
+    <input id="password" name="password" type="password" required autocomplete="new-password" value="{{ password or '' }}" placeholder="At least 8 characters, with a letter and a number" />
     <label for="confirm">Confirm password</label>
-    <input id="confirm" name="confirm" type="password" required autocomplete="new-password" value="{{ confirm or '' }}" />
+    <input id="confirm" name="confirm" type="password" required autocomplete="new-password" value="{{ confirm or '' }}" placeholder="Type the password again" />
     {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Create account</button>
   </form>

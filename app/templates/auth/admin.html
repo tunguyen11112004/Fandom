@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_pager.html" import pager %}
 {% block title %}Admin · Fan Hub Plus{% endblock %}
 {% block body_class %}stack-movies auth desk{% endblock %}
 {% block content %}
@@ -9,59 +10,139 @@
     <h1>Control panel</h1>
     <p class="side-note">Signed in as {{ user.name }}.</p>
     <nav aria-label="Admin sections">
-      <a href="{{ url_for('account.admin_home', tab='queue') }}" {% if tab == 'queue' %}aria-current="page"{% endif %}>Fan review <span>{{ queue|length }}</span></a>
+      <a href="{{ url_for('account.admin_home', tab='dashboard', preset=range_preset, **({'from': range_from, 'to': range_to} if range_preset == 'custom' else {})) }}" {% if tab == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="{{ url_for('account.admin_home', tab='review') }}" {% if tab == 'review' %}aria-current="page"{% endif %}>Fan review <span>{{ queue_total }}</span></a>
       <a href="{{ url_for('account.admin_home', tab='feedback') }}" {% if tab == 'feedback' %}aria-current="page"{% endif %}>Feedback <span>{{ open_feedback }}</span></a>
-      <a href="{{ url_for('account.admin_home', tab='health', days=days) }}" {% if tab == 'health' %}aria-current="page"{% endif %}>Health</a>
-      <a href="{{ url_for('account.admin_home', tab='content') }}" {% if tab == 'content' %}aria-current="page"{% endif %}>Catalog</a>
+      <a href="{{ url_for('account.admin_home', tab='catalog') }}" {% if tab == 'catalog' %}aria-current="page"{% endif %}>Catalog</a>
       <a href="{{ url_for('account.admin_home', tab='categories') }}" {% if tab == 'categories' %}aria-current="page"{% endif %}>Categories</a>
       <a href="{{ url_for('account.admin_home', tab='fandoms') }}" {% if tab == 'fandoms' %}aria-current="page"{% endif %}>Fandoms</a>
       <a href="{{ url_for('account.admin_home', tab='characters') }}" {% if tab == 'characters' %}aria-current="page"{% endif %}>Characters</a>
-      <a href="{{ url_for('account.admin_home', tab='merchandise') }}" {% if tab == 'merchandise' %}aria-current="page"{% endif %}>Merch</a>
+      <a href="{{ url_for('account.admin_home', tab='merch') }}" {% if tab == 'merch' %}aria-current="page"{% endif %}>Merch</a>
       <a href="{{ url_for('account.admin_home', tab='events') }}" {% if tab == 'events' %}aria-current="page"{% endif %}>Events</a>
       <a href="{{ url_for('account.admin_home', tab='tags') }}" {% if tab == 'tags' %}aria-current="page"{% endif %}>Tags</a>
-      <a href="{{ url_for('account.admin_home', tab='faqs') }}" {% if tab == 'faqs' %}aria-current="page"{% endif %}>FAQ</a>
-      <a href="{{ url_for('account.admin_home', tab='users') }}" {% if tab == 'users' %}aria-current="page"{% endif %}>Members</a>
+      <a href="{{ url_for('account.admin_home', tab='faq') }}" {% if tab == 'faq' %}aria-current="page"{% endif %}>FAQ</a>
+      <a href="{{ url_for('account.admin_home', tab='members') }}" {% if tab == 'members' %}aria-current="page"{% endif %}>Members</a>
       <a href="{{ url_for('account.admin_home', tab='record') }}" {% if tab == 'record' %}aria-current="page"{% endif %}>Record</a>
     </nav>
   </aside>
   <div class="console-main">
 
-  {% if tab == 'queue' %}
+  {% if tab == 'review' %}
   <section id="queue" class="console-block">
     <header class="panel-head">
       <p class="step">01</p>
       <div>
         <h2>Fan review</h2>
-        <p>Check fan submissions before they reach the shelves. {{ queue|length }} piece{{ '' if queue|length == 1 else 's' }} waiting.</p>
+        <p>Every piece a fan sends stays here. {{ queue_total }} still waiting. Open one before you publish or send it back.</p>
       </div>
     </header>
+    <form method="get" class="ticket-filters">
+      <input type="hidden" name="tab" value="review" />
+      <label for="review-state">Status
+        <select id="review-state" name="state">
+          <option value="pending" {% if review_state == 'pending' %}selected{% endif %}>Pending</option>
+          <option value="approved" {% if review_state == 'approved' %}selected{% endif %}>Published</option>
+          <option value="rejected" {% if review_state == 'rejected' %}selected{% endif %}>Sent back</option>
+          <option value="all" {% if review_state == 'all' %}selected{% endif %}>All requests</option>
+        </select>
+      </label>
+      <label for="review-q">Search
+        <input id="review-q" name="q" value="{{ review_q }}" placeholder="Title or member" />
+      </label>
+      <button type="submit">Filter</button>
+    </form>
+    {% if review_piece %}
+      {% set row = review_piece %}
+      <article class="review-sheet">
+        <p class="review-back"><a class="button quiet" href="{{ url_for('account.admin_home', tab='review', state=review_state, q=review_q) }}">Back to the queue</a></p>
+        {% if row.cover_image_url %}
+          <figure class="review-cover">
+            <img src="{{ row.cover_image_url }}" alt="" />
+          </figure>
+        {% elif review_player == 'image' and review_src %}
+          <figure class="review-cover">
+            <img src="{{ review_src }}" alt="" />
+          </figure>
+        {% endif %}
+        <p class="kicker">{{ row.category.name }}{% if row.fandom %} · {{ row.fandom.name }}{% endif %}</p>
+        <h3>{{ row.title }} <span class="chip chip-{{ row.status }}">{% if row.status == 'approved' %}Published{% elif row.status == 'rejected' %}Sent back{% else %}Pending{% endif %}</span></h3>
+        {% if row.summary %}<p class="lede">{{ row.summary }}</p>{% endif %}
+        <dl class="review-facts">
+          <div><dt>From</dt><dd>{{ row.author.name }} · {{ row.author.email }}</dd></div>
+          <div><dt>Type</dt><dd>{{ row.content_type }}</dd></div>
+          <div><dt>Genre</dt><dd>{{ row.genre or '—' }}</dd></div>
+          <div><dt>Released</dt><dd>{{ row.release_year or '—' }}</dd></div>
+          <div><dt>Rights</dt><dd>{{ 'Confirmed' if row.rights_confirmed else 'Not confirmed' }}</dd></div>
+        </dl>
+        {% if row.tags %}<p class="media-note">Tags: {{ row.tags }}</p>{% endif %}
+        {% if row.source_name or row.source_url %}
+          <p class="media-note">Source: {% if row.source_url %}<a href="{{ row.source_url }}" target="_blank" rel="noreferrer">{{ row.source_name or row.source_url }}</a>{% else %}{{ row.source_name }}{% endif %}</p>
+        {% endif %}
+        {% if review_player == 'youtube' %}
+          <div class="embed-frame">
+            <iframe src="{{ review_src }}" title="{{ row.title }} player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+          </div>
+        {% elif review_player == 'video' %}
+          <div class="embed-frame"><video src="{{ review_src }}" controls playsinline preload="metadata"></video></div>
+        {% elif review_player == 'audio' %}
+          <div class="embed-frame audio"><audio src="{{ review_src }}" controls preload="metadata"></audio></div>
+        {% elif review_player == 'link' %}
+          <p class="media-note"><a href="{{ review_src }}" target="_blank" rel="noreferrer">Open the media</a></p>
+        {% endif %}
+        <div class="body-copy">{{ row.body|rich }}</div>
+        {% if review_timeline %}
+          <section class="story-timeline">
+            <h3>Timeline</h3>
+            <ol class="timeline">
+              {% for entry in review_timeline %}
+                <li>
+                  {% if entry.year %}<time>{{ entry.year }}</time>{% endif %}
+                  <div>
+                    <strong>{{ entry.title }}</strong>
+                    {% if entry.description %}<p>{{ entry.description }}</p>{% endif %}
+                  </div>
+                </li>
+              {% endfor %}
+            </ol>
+          </section>
+        {% endif %}
+        {% if row.status == 'pending' %}
+        <div class="decision-row">
+          <form method="post" action="{{ url_for('account.admin_submission', submission_id=row.id) }}">
+            <button type="submit" name="decision" value="approve">Publish</button>
+          </form>
+          <form method="post" action="{{ url_for('account.admin_submission', submission_id=row.id) }}" class="inline-note">
+            <input id="reason-{{ row.id }}" name="reason" placeholder="What should they change?" aria-label="Reason for {{ row.title }}" />
+            <button class="quiet" type="submit" name="decision" value="reject">Send back</button>
+          </form>
+        </div>
+        {% elif row.status == 'approved' and row.published_item %}
+          <p><a class="button" href="{{ url_for('main.content_detail', slug=row.published_item.slug) }}">Open the published page</a></p>
+        {% else %}
+          <p class="media-note">This piece was sent back{% if row.reject_reason %}: {{ row.reject_reason }}{% endif %}.</p>
+        {% endif %}
+      </article>
+    {% else %}
     <div class="desk-grid">
       <div class="panel-card">
-        <h3>Waiting for a decision</h3>
+        <h3>{% if review_state == 'pending' %}Waiting for a decision{% elif review_state == 'approved' %}Published{% elif review_state == 'rejected' %}Sent back{% else %}All requests{% endif %}</h3>
         {% for row in queue %}
           <article class="work-item">
             <div class="row-title">
               <strong>{{ row.title }}</strong>
-              <span class="chip chip-pending">Pending</span>
+              <span class="chip chip-{{ row.status }}">{% if row.status == 'approved' %}Published{% elif row.status == 'rejected' %}Sent back{% else %}Pending{% endif %}</span>
             </div>
-            <p>{{ row.author.name }} · {{ row.category.name }} · {{ row.content_type }}</p>
-            <p class="work-body">{{ row.body }}</p>
-            {% if row.media_url %}<p><a href="{{ row.media_url }}">Attached link</a></p>{% endif %}
-            <div class="decision-row">
-              <form method="post" action="{{ url_for('account.admin_submission', submission_id=row.id) }}">
-                <button type="submit" name="decision" value="approve">Publish</button>
-              </form>
-              <form method="post" action="{{ url_for('account.admin_submission', submission_id=row.id) }}" class="inline-note">
-                <input id="reason-{{ row.id }}" name="reason" placeholder="What should they change?" aria-label="Reason for {{ row.title }}" />
-                <button class="quiet" type="submit" name="decision" value="reject">Send back</button>
-              </form>
-            </div>
+            <p>{{ row.author.name }} · {{ row.category.name }}{% if row.fandom %} · {{ row.fandom.name }}{% endif %} · {{ row.content_type }}</p>
+            {% if row.summary %}<p class="work-body">{{ row.summary }}</p>{% endif %}
+            <p><a class="button" href="{{ url_for('account.admin_home', tab='review', piece=row.id) }}">Review</a></p>
           </article>
         {% else %}
           <p class="empty-line">The queue is clear.</p>
         {% endfor %}
       </div>
     </div>
+    {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'review', 'state': review_state, 'q': review_q}) }}
+    {% endif %}
   </section>
   {% endif %}
 
@@ -69,161 +150,311 @@
   <section id="feedback" class="console-block">
     <header class="panel-head">
       <div>
-        <h2>Feedback</h2>
-        <p>{{ open_feedback }} item{{ '' if open_feedback == 1 else 's' }} still open.</p>
+        <h2>Feedback desk</h2>
+        <p>{{ open_feedback }} item{{ '' if open_feedback == 1 else 's' }} still open. Filter, update status, or take internal action.</p>
       </div>
     </header>
-    <div class="panel-card">
-        <form method="get" class="filter-line">
-          <input type="hidden" name="tab" value="feedback" />
-          <input type="hidden" name="days" value="{{ days }}" />
-          {% if query %}<input type="hidden" name="q" value="{{ query }}" />{% endif %}
-          <label class="sr-only" for="kind">Type</label>
-          <select id="kind" name="kind">
-            <option value="">All types</option>
-            <option value="bug" {% if kinds == 'bug' %}selected{% endif %}>Bug</option>
-            <option value="suggestion" {% if kinds == 'suggestion' %}selected{% endif %}>Suggestion</option>
-            <option value="query" {% if kinds == 'query' %}selected{% endif %}>Question</option>
-          </select>
-          <label class="sr-only" for="status">State</label>
-          <select id="status" name="status">
-            <option value="">All states</option>
-            <option value="new" {% if states == 'new' %}selected{% endif %}>New</option>
-            <option value="reviewing" {% if states == 'reviewing' %}selected{% endif %}>Reviewing</option>
-            <option value="done" {% if states == 'done' %}selected{% endif %}>Done</option>
-          </select>
-          <button type="submit">Filter</button>
-        </form>
-        {% for row in feedback_rows %}
-          <article class="work-item">
-            <div class="row-title">
-              <strong>{{ row.kind }}</strong>
-              <span class="chip chip-{{ row.status }}">{{ row.status }}</span>
-            </div>
-            <p>{{ row.email }}</p>
-            <p class="work-body">{{ row.message }}</p>
-            {% if row.page_url %}<p>Page: {{ row.page_url }}</p>{% endif %}
-            {% if row.steps %}<p>Steps: {{ row.steps }}</p>{% endif %}
-            <form method="post" action="{{ url_for('account.admin_feedback', feedback_id=row.id) }}" class="inline-note">
-              <select name="status" aria-label="Status for feedback {{ row.id }}">
-                <option value="new" {% if row.status == 'new' %}selected{% endif %}>New</option>
-                <option value="reviewing" {% if row.status == 'reviewing' %}selected{% endif %}>Reviewing</option>
-                <option value="done" {% if row.status == 'done' %}selected{% endif %}>Done</option>
-              </select>
-              <input name="admin_note" value="{{ row.admin_note }}" placeholder="Desk note" aria-label="Note for feedback {{ row.id }}" />
-              <button type="submit">Update</button>
-            </form>
-            <form method="post" action="{{ url_for('account.admin_feedback', feedback_id=row.id) }}">
-              <button class="quiet" type="submit" name="action" value="delete">Delete</button>
-            </form>
-          </article>
+    <form method="get" class="ticket-filters">
+      <input type="hidden" name="tab" value="feedback" />
+      <input type="hidden" name="days" value="{{ days }}" />
+      {% if query %}<input type="hidden" name="q" value="{{ query }}" />{% endif %}
+      <label for="kind">Ticket type
+        <select id="kind" name="kind">
+          <option value="">All types</option>
+          <option value="bug" {% if kinds == 'bug' %}selected{% endif %}>Bug</option>
+          <option value="suggestion" {% if kinds == 'suggestion' %}selected{% endif %}>Suggestion</option>
+          <option value="query" {% if kinds == 'query' %}selected{% endif %}>Question</option>
+        </select>
+      </label>
+      <label for="status">Processing state
+        <select id="status" name="status">
+          <option value="">All states</option>
+          <option value="new" {% if states == 'new' %}selected{% endif %}>New</option>
+          <option value="reviewing" {% if states == 'reviewing' %}selected{% endif %}>Reviewing</option>
+          <option value="done" {% if states == 'done' %}selected{% endif %}>Done</option>
+        </select>
+      </label>
+      <button type="submit">Filter</button>
+    </form>
+    {% for row in feedback_rows %}
+      <article class="ticket">
+        <header class="ticket-top">
+          <span class="chip">{{ row.kind }}</span>
+          <span class="chip chip-{{ row.status }}">{{ row.status }}</span>
+        </header>
+        <p class="ticket-who">{{ row.email }}</p>
+        {% if (row.message or '').lstrip().startswith('<') %}
+          <div class="work-body">{{ row.message|safe }}</div>
         {% else %}
-          <p class="empty-line">No feedback in this filter.</p>
-        {% endfor %}
-    </div>
+          <p class="work-body">{{ row.message }}</p>
+        {% endif %}
+        {% if row.page_url %}<p>Page: {{ row.page_url }}</p>{% endif %}
+        {% if row.steps %}<p>Steps: {{ row.steps }}</p>{% endif %}
+        <form method="post" action="{{ url_for('account.admin_feedback', feedback_id=row.id) }}" class="ticket-actions">
+          <select name="status" aria-label="Status for feedback {{ row.id }}">
+            <option value="new" {% if row.status == 'new' %}selected{% endif %}>New</option>
+            <option value="reviewing" {% if row.status == 'reviewing' %}selected{% endif %}>Reviewing</option>
+            <option value="done" {% if row.status == 'done' %}selected{% endif %}>Done</option>
+          </select>
+          <input name="admin_note" value="{{ row.admin_note or '' }}" placeholder="Add an internal desk note" aria-label="Note for feedback {{ row.id }}" />
+          <button type="submit">Update</button>
+          <button class="quiet" type="submit" name="action" value="delete">Delete</button>
+        </form>
+      </article>
+    {% else %}
+      <p class="empty-line">No feedback in this filter.</p>
+    {% endfor %}
+    {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'feedback', 'kind': kinds, 'status': states}) }}
   </section>
   {% endif %}
 
-  {% if tab == 'health' %}
-  <section id="health" class="console-block">
-    <header class="panel-head">
-      <p class="step">02</p>
+  {% if tab == 'dashboard' %}
+  <section id="dashboard" class="console-block usage-board">
+    <header class="panel-head dash-head">
       <div>
-        <h2>How the hub is doing</h2>
-        <p>Active means a member signed in during the window.</p>
+        <p class="kicker">Usage</p>
+        <h2>Dashboard</h2>
+        <p>Who is using the hub, which shelves they open, and how much they talk to Mina.</p>
+      </div>
+      <div class="range-picker" data-range>
+        <button type="button" class="range-toggle" aria-expanded="false" aria-haspopup="dialog">{{ range_label }}</button>
+        <div class="range-pop" hidden>
+          <div class="range-presets">
+            {% for key, label in [('today', 'Today'), ('yesterday', 'Yesterday'), ('7', 'Last 7 days'), ('30', 'Last 30 days'), ('month', 'This month'), ('lastmonth', 'Last month')] %}
+              <a href="{{ url_for('account.admin_home', tab='dashboard', preset=key) }}" {% if range_preset == key %}aria-current="true"{% endif %}>{{ label }}</a>
+            {% endfor %}
+            <button type="button" data-custom {% if range_preset == 'custom' %}aria-current="true"{% endif %}>Custom range</button>
+          </div>
+          <form method="get" class="range-custom" {% if range_preset != 'custom' %}hidden{% endif %}>
+            <input type="hidden" name="tab" value="dashboard" />
+            <input type="hidden" name="preset" value="custom" />
+            <input type="hidden" name="from" value="{{ range_from }}" />
+            <input type="hidden" name="to" value="{{ range_to }}" />
+            <div class="range-cals" data-cals data-from="{{ range_from }}" data-to="{{ range_to }}"></div>
+            <button type="submit">Apply</button>
+          </form>
+        </div>
       </div>
     </header>
-    <nav class="chip-row" aria-label="Time window">
-      <a href="{{ url_for('account.admin_home', tab='health', days='7') }}" {% if days == '7' %}aria-current="true"{% endif %}>7 days</a>
-      <a href="{{ url_for('account.admin_home', tab='health', days='30') }}" {% if days == '30' %}aria-current="true"{% endif %}>30 days</a>
-      <a href="{{ url_for('account.admin_home', tab='health', days='all') }}" {% if days == 'all' %}aria-current="true"{% endif %}>All time</a>
-    </nav>
-    <ul class="kpi-row">
-      <li><span>Active members</span><strong>{{ active_users }}</strong></li>
-      <li><span>Members</span><strong>{{ member_count }}</strong></li>
-      <li><span>Chat turns</span><strong>{{ chat_count }}</strong></li>
-      <li><span>Titles</span><strong>{{ title_count }}</strong></li>
+    <p class="dash-note">Sign-ins, new members, chat, bookmarks, and ratings use {{ range_label|lower }}. Views stay the running total on each page.</p>
+    <ul class="dash-kpis">
+      <li>
+        <span>Active members</span>
+        <strong>{{ pulse.active }}</strong>
+        <small>{{ pulse.joined }} new · {{ pulse.members }} members · {{ pulse.verified }} verified</small>
+      </li>
+      <li>
+        <span>Chat turns</span>
+        <strong>{{ pulse.chat }}</strong>
+        <small>{{ pulse.chat_matched }} answered · {{ pulse.chat_missed }} missed</small>
+        <i style="--share: {{ pulse.chat_share }}%"></i>
+      </li>
+      <li>
+        <span>Title views</span>
+        <strong>{{ pulse.title_views }}</strong>
+        <small>{{ pulse.titles }} live · {{ pulse.hidden }} hidden · {{ pulse.featured }} featured</small>
+      </li>
+      <li>
+        <span>Merch views</span>
+        <strong>{{ pulse.merch_views }}</strong>
+        <small>{{ pulse.merch }} pieces on display · {{ pulse.character_views }} character views</small>
+      </li>
     </ul>
-    <ul class="mix">
-      {% for name, count in popular %}
-        <li>
-          <span>{{ name }}</span>
-          <strong>{{ count }}</strong>
-          <i style="--share: {{ (count / title_count * 100) if title_count else 0 }}%"></i>
-        </li>
-      {% endfor %}
-    </ul>
-    <div class="desk-grid">
-      <div>
-        <h3>Most viewed titles</h3>
-        <ol>
-          {% for item in viewed_titles %}
-            <li>{{ item.title }} · {{ item.view_count }} views</li>
+    <div class="dash-split">
+      <article class="dash-card">
+        <header>
+          <h3>Popular categories</h3>
+          <p>Published titles and the views sitting on each shelf.</p>
+        </header>
+        <ul class="heat-list">
+          {% for row in pulse.categories %}
+            <li>
+              <span>{{ row.name }}</span>
+              <strong>{{ row.views }}</strong>
+              <small>{{ row.titles }} title{{ '' if row.titles == 1 else 's' }}</small>
+              <i style="--share: {{ row.share }}%"></i>
+            </li>
           {% else %}
-            <li>No views yet.</li>
+            <li class="empty-line">No categories yet.</li>
+          {% endfor %}
+        </ul>
+      </article>
+      <article class="dash-card">
+        <header>
+          <h3>Hot fandoms</h3>
+          <p>Views across the titles filed under each fandom.</p>
+        </header>
+        <ol class="rank-list">
+          {% for row in pulse.fandoms_hot %}
+            <li>
+              <span class="rank">{{ loop.index }}</span>
+              <div>
+                <strong>{{ row.name }}</strong>
+                <small>{{ row.views }} views · {{ row.titles }} title{{ '' if row.titles == 1 else 's' }}</small>
+              </div>
+            </li>
+          {% else %}
+            <li class="empty-line">No fandom views yet.</li>
           {% endfor %}
         </ol>
-      </div>
-      <div>
-        <h3>Most viewed merchandise</h3>
-        <ol>
-          {% for item in viewed_merch %}
-            <li>{{ item.name }} · {{ item.view_count }} views</li>
-          {% else %}
-            <li>No merchandise views yet.</li>
-          {% endfor %}
-        </ol>
-      </div>
+      </article>
     </div>
+    <div class="dash-split">
+      <article class="dash-card">
+        <header>
+          <h3>Most viewed titles</h3>
+          <p>Popularity is the score from views, bookmarks, and ratings.</p>
+        </header>
+        <ol class="rank-list">
+          {% for item in pulse.titles_hot %}
+            <li>
+              <span class="rank">{{ loop.index }}</span>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <small>{{ item.view_count }} views · popularity {{ item.popularity_score }}{% if item.fandom %} · {{ item.fandom.name }}{% endif %}</small>
+              </div>
+            </li>
+          {% else %}
+            <li class="empty-line">No titles yet.</li>
+          {% endfor %}
+        </ol>
+      </article>
+      <article class="dash-card">
+        <header>
+          <h3>Most viewed displays</h3>
+          <p>Merchandise and characters, by page views.</p>
+        </header>
+        <ol class="rank-list">
+          {% for item in pulse.merch_hot %}
+            <li>
+              <span class="rank">{{ loop.index }}</span>
+              <div>
+                <strong>{{ item.name }}</strong>
+                <small>Merch · {{ item.view_count }} views</small>
+              </div>
+            </li>
+          {% endfor %}
+          {% for item in pulse.characters_hot %}
+            <li>
+              <span class="rank">{{ loop.index }}</span>
+              <div>
+                <strong>{{ item.name }}</strong>
+                <small>Character · {{ item.view_count }} views</small>
+              </div>
+            </li>
+          {% endfor %}
+          {% if not pulse.merch_hot and not pulse.characters_hot %}
+            <li class="empty-line">No display views yet.</li>
+          {% endif %}
+        </ol>
+      </article>
+    </div>
+    <div class="dash-split">
+      <article class="dash-card">
+        <header>
+          <h3>Waiting for review</h3>
+          <p>{{ queue|length }} fan piece{{ '' if queue|length == 1 else 's' }} still pending.</p>
+        </header>
+        <ul class="queue-preview">
+          {% for row in queue[:4] %}
+            <li>
+              <strong>{{ row.title }}</strong>
+              <small>{{ row.author.name if row.author else 'Member' }}{% if row.category %} · {{ row.category.name }}{% endif %}{% if row.fandom %} · {{ row.fandom.name }}{% endif %}</small>
+            </li>
+          {% else %}
+            <li class="empty-line">The queue is clear.</li>
+          {% endfor %}
+        </ul>
+        <a class="button" href="{{ url_for('account.admin_home', tab='review') }}">Open fan review</a>
+      </article>
+      <article class="dash-card">
+        <header>
+          <h3>Interaction</h3>
+          <p>What members did in this window, besides opening a page.</p>
+        </header>
+        <ul class="stat-lines">
+          <li><span>Ratings</span><strong>{% if pulse.rating_avg is not none %}{{ pulse.rating_avg }} / 5{% else %}—{% endif %}</strong><small>{{ pulse.ratings }} score{{ '' if pulse.ratings == 1 else 's' }}</small></li>
+          <li><span>Bookmarks</span><strong>{{ pulse.bookmarks }}</strong><small>{{ pulse.bookmark_titles }} titles · {{ pulse.bookmark_characters }} characters · {{ pulse.bookmark_merch }} merch · {{ pulse.bookmark_events }} events</small></li>
+          <li><span>Mina answered</span><strong>{{ pulse.chat_share }}%</strong><small>{{ pulse.chat_matched }} of {{ pulse.chat }} turns matched a reply</small><i style="--share: {{ pulse.chat_share }}%"></i></li>
+          <li><span>Open feedback</span><strong>{{ open_feedback }}</strong><small>Still new or in progress</small></li>
+        </ul>
+        <a class="button" href="{{ url_for('account.admin_home', tab='feedback') }}">Open feedback</a>
+      </article>
+    </div>
+    <ul class="dash-floor">
+      <li><span>Fandoms</span><strong>{{ pulse.fandoms }}</strong><small>Active</small></li>
+      <li><span>Characters</span><strong>{{ pulse.characters }}</strong><small>{{ pulse.character_views }} views</small></li>
+      <li><span>Merchandise</span><strong>{{ pulse.merch }}</strong><small>{{ pulse.merch_views }} views</small></li>
+      <li><span>Events</span><strong>{{ pulse.events }}</strong><small>{{ pulse.upcoming_events }} still ahead</small></li>
+      <li><span>Featured</span><strong>{{ pulse.featured }}</strong><small>On the featured shelf</small></li>
+    </ul>
   </section>
   {% endif %}
 
-  {% if tab == 'content' %}
+  {% if tab == 'catalog' %}
   <section id="content" class="console-block">
     <header class="panel-head">
       <p class="step">03</p>
       <div>
-        <h2>Catalog</h2>
+        <h2>Catalog registry</h2>
         <p>Articles, video, and audio. Hidden titles stay off Explore. Video and audio need a link or a file.</p>
       </div>
     </header>
-    <details class="add-drawer" {% if error and not focus %}open{% endif %}>
-      <summary>Add a title</summary>
-      <form method="post" action="{{ url_for('account.admin_content_create') }}" class="desk-form form-grid" enctype="multipart/form-data">
-        <label for="new-title">Title<input id="new-title" name="title" required /></label>
-        <label for="new-category">Category
-          <select id="new-category" name="category_id">
+    <ul class="kpi-row">
+      <li><span>In this view</span><strong>{{ catalog_total }}</strong></li>
+      <li><span>All titles</span><strong>{{ title_count }}</strong></li>
+      <li><span>Waiting review</span><strong>{{ queue|length }}</strong></li>
+      <li><span>Open feedback</span><strong>{{ open_feedback }}</strong></li>
+    </ul>
+    <details class="add-drawer studio-card" {% if error and not focus %}open{% endif %}>
+      <summary>Add a title to the catalog</summary>
+      <form method="post" action="{{ url_for('account.admin_content_create') }}" class="desk-form form-grid studio-form fan-card" enctype="multipart/form-data">
+        <label for="new-title">Title<input id="new-title" name="title" required placeholder="Title fans will see" /></label>
+        <fieldset class="fan-field span-2">
+          <legend>Category</legend>
+          <div class="fan-cats">
             {% for category in categories %}
-              <option value="{{ category.id }}">{{ category.name }}</option>
+              <label class="fan-cat">
+                <input type="radio" name="category_id" value="{{ category.id }}" required {% if loop.first %}checked{% endif %} />
+                <span>{{ category.name }}</span>
+              </label>
             {% endfor %}
-          </select>
-        </label>
+          </div>
+        </fieldset>
         <label for="new-fandom">Fandom
-          <select id="new-fandom" name="fandom_id">
+          <select id="new-fandom" name="fandom_id" data-fandoms>
             <option value="">No fandom</option>
             {% for fan in fandom_rows %}
-              <option value="{{ fan.fandom_id }}">{{ fan.name }}</option>
+              <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}">{{ fan.name }}</option>
             {% endfor %}
           </select>
         </label>
-        <label for="new-type">Type
-          <select id="new-type" name="content_type">
-            <option value="article">Article</option>
-            <option value="video">Video</option>
-            <option value="audio">Audio</option>
-            <option value="image">Image</option>
-            <option value="trailer">Trailer</option>
-            <option value="explainer">Explainer</option>
-          </select>
-        </label>
-        <label for="new-genre">Genre<input id="new-genre" name="genre" required /></label>
-        <label for="new-year">Year<input id="new-year" name="release_year" required inputmode="numeric" /></label>
+        <fieldset class="fan-field span-2">
+          <legend>Type</legend>
+          <div class="fan-types">
+            {% for kind, label in [('article', 'Article'), ('image', 'Image'), ('video', 'Video'), ('audio', 'Audio'), ('trailer', 'Trailer'), ('explainer', 'Explainer')] %}
+              <label class="fan-type">
+                <input type="radio" name="content_type" value="{{ kind }}" {% if kind == 'article' %}checked{% endif %} />
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        <label for="new-genre">Genre<input id="new-genre" name="genre" required placeholder="Action, Pop, Mystery…" /></label>
+        <label for="new-year">Year<input id="new-year" name="release_year" required inputmode="numeric" placeholder="2024" /></label>
         <label for="new-tags">Tags<input id="new-tags" name="tags" placeholder="Limited Edition, Collectible" /></label>
-        <label class="span-2" for="new-summary">Summary<textarea id="new-summary" name="summary" rows="2" required></textarea></label>
-        <label class="span-2" for="new-body">Body<textarea id="new-body" name="body" rows="4" required></textarea></label>
+        <label class="span-2" for="new-summary">Summary<textarea id="new-summary" name="summary" rows="2" required placeholder="One or two sentences for the card"></textarea></label>
+        <label class="span-2" for="new-body">Body<textarea id="new-body" name="body" rows="3" data-rich placeholder="The full piece"></textarea></label>
         <label class="span-2" for="new-timeline">Timeline
           <textarea id="new-timeline" name="timeline" rows="3" placeholder="1999 | First chapter | One line about that beat"></textarea>
         </label>
+        <label for="new-source-name">Source name<input id="new-source-name" name="source_name" maxlength="150" placeholder="Crunchyroll on YouTube" /></label>
+        <label for="new-source-url">Source link<input id="new-source-url" name="source_url" type="url" placeholder="https://www.youtube.com/watch?v=..." /></label>
+        <div class="media-slot span-2" data-media="image" hidden>
+          <label for="new-image-link">Image link
+            <input id="new-image-link" name="embed_url" type="url" placeholder="https://" />
+          </label>
+        </div>
         <div class="media-slot span-2" data-media="video" hidden>
           <label for="new-video-link">Video link
             <input id="new-video-link" name="embed_url" type="text" placeholder="https://www.youtube.com/watch?v=..." />
@@ -241,13 +472,13 @@
           </label>
         </div>
         <label class="check"><input type="checkbox" name="published" value="yes" checked /> Published</label>
-        <label class="check"><input type="checkbox" name="featured" value="yes" /> Featured</label>
+        <label class="check"><input type="checkbox" name="featured" value="yes" /> Featured on Explore</label>
         {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
         <button type="submit">Add to the catalog</button>
       </form>
     </details>
-    <form method="get" class="filters">
-      <input type="hidden" name="tab" value="content" />
+    <form method="get" class="filters studio-filter">
+      <input type="hidden" name="tab" value="catalog" />
       <div>
         <label for="catalog-q">Search</label>
         <input id="catalog-q" name="q" value="{{ catalog_q }}" placeholder="Title or summary" />
@@ -285,9 +516,12 @@
           <option value="yes" {% if catalog_featured == 'yes' %}selected{% endif %}>Featured only</option>
         </select>
       </div>
-      <div class="filter-actions">
-        <button type="submit">Apply</button>
-        <a href="{{ url_for('account.admin_home', tab='content') }}">Clear</a>
+      <div class="studio-filter-foot">
+        <span></span>
+        <div class="filter-actions">
+          <a href="{{ url_for('account.admin_home', tab='catalog') }}">Clear</a>
+          <button type="submit">Apply</button>
+        </div>
       </div>
     </form>
     <div class="table-wrap">
@@ -316,30 +550,41 @@
               <td>
                 <details {% if focus == item.id|string %}open{% endif %}>
                   <summary>Edit</summary>
-                  <form method="post" action="{{ url_for('account.admin_content_update', item_id=item.id) }}" class="desk-form" enctype="multipart/form-data">
-                    <input name="title" value="{{ item.title }}" required aria-label="Title" />
+                  <form method="post" action="{{ url_for('account.admin_content_update', item_id=item.id) }}" class="desk-form fan-card" enctype="multipart/form-data">
+                    <input name="title" value="{{ item.title }}" required aria-label="Title" placeholder="Title fans will see" />
                     <select name="category_id" aria-label="Category">
                       {% for category in categories %}
                         <option value="{{ category.id }}" {% if category.id == item.category_id %}selected{% endif %}>{{ category.name }}</option>
                       {% endfor %}
                     </select>
-                    <select name="fandom_id" aria-label="Fandom">
+                    <select name="fandom_id" data-fandoms aria-label="Fandom">
                       <option value="">No fandom</option>
                       {% for fan in fandom_rows %}
-                        <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == item.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                        <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if fan.fandom_id == item.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
                       {% endfor %}
                     </select>
-                    <select name="content_type" aria-label="Type">
-                      {% for kind, label in [('article', 'Article'), ('video', 'Video'), ('audio', 'Audio'), ('image', 'Image'), ('trailer', 'Trailer'), ('explainer', 'Explainer')] %}
-                        <option value="{{ kind }}" {% if item.content_type == kind %}selected{% endif %}>{{ label }}</option>
-                      {% endfor %}
-                    </select>
-                    <input name="genre" value="{{ item.genre }}" required aria-label="Genre" />
-                    <input name="release_year" value="{{ item.release_year }}" required aria-label="Year" />
-                    <textarea name="summary" rows="2" required aria-label="Summary">{{ item.summary }}</textarea>
-                    <textarea name="body" rows="3" required aria-label="Body">{{ item.body }}</textarea>
-                    <textarea name="timeline" rows="3" aria-label="Timeline">{% for entry in item.timeline|sort(attribute='sort_order') %}{{ entry.entry_date.year if entry.entry_date else '' }} | {{ entry.title }} | {{ entry.description or '' }}
+                    <fieldset class="fan-field">
+                      <legend>Type</legend>
+                      <div class="fan-types">
+                        {% for kind, label in [('article', 'Article'), ('image', 'Image'), ('video', 'Video'), ('audio', 'Audio'), ('trailer', 'Trailer'), ('explainer', 'Explainer')] %}
+                          <label class="fan-type">
+                            <input type="radio" name="content_type" value="{{ kind }}" {% if item.content_type == kind %}checked{% endif %} />
+                            <span>{{ label }}</span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    </fieldset>
+                    <input name="genre" value="{{ item.genre }}" required aria-label="Genre" placeholder="Action, Pop, Mystery…" />
+                    <input name="release_year" value="{{ item.release_year }}" required aria-label="Year" placeholder="2024" />
+                    <textarea name="summary" rows="2" required aria-label="Summary" placeholder="One or two sentences for the card">{{ item.summary }}</textarea>
+                    <textarea name="body" rows="3" data-rich aria-label="Body" placeholder="The full piece">{{ item.body }}</textarea>
+                    <textarea name="timeline" rows="3" aria-label="Timeline" placeholder="1999 | First chapter | One line about that beat">{% for entry in item.timeline|sort(attribute='sort_order') %}{{ entry.entry_date.year if entry.entry_date else '' }} | {{ entry.title }} | {{ entry.description or '' }}
 {% endfor %}</textarea>
+                    <input name="source_name" value="{{ item.source_name or '' }}" maxlength="150" aria-label="Source name" placeholder="Crunchyroll on YouTube" />
+                    <input name="source_url" type="url" value="{{ item.source_url or '' }}" aria-label="Source link" placeholder="https://www.youtube.com/watch?v=..." />
+                    <div class="media-slot" data-media="image" hidden>
+                      <input name="embed_url" type="url" value="{{ item.embed_url if item.content_type == 'image' and item.embed_url and item.embed_url.startswith('http') else '' }}" placeholder="https://" aria-label="Image link" />
+                    </div>
                     <div class="media-slot" data-media="video" hidden>
                       {% if item.embed_url and item.embed_url != 'None' and item.content_type in ['video', 'trailer', 'explainer'] %}
                         <p class="side-note">Current video: {{ item.embed_url }}</p>
@@ -357,7 +602,7 @@
                       <label class="check"><input type="checkbox" name="remove_media" value="yes" /> Remove the current audio</label>
                     </div>
                     <input name="tags" value="{{ item.tags }}" placeholder="Tags" aria-label="Tags" />
-                    <input name="popularity_score" value="{{ item.popularity_score }}" aria-label="Popularity" />
+                    <input name="popularity_score" value="{{ item.popularity_score }}" aria-label="Popularity" placeholder="0–100" />
                     <label class="check"><input type="checkbox" name="published" value="yes" {% if item.published %}checked{% endif %} /> Published</label>
                     <label class="check"><input type="checkbox" name="featured" value="yes" {% if item.featured %}checked{% endif %} /> Featured</label>
                     {% if focus == item.id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
@@ -373,15 +618,24 @@
         </tbody>
       </table>
     </div>
-    <nav class="crumbs" aria-label="Catalog pages">
+    {% if catalog_pages > 1 %}
+    <nav class="pager" aria-label="Catalog pages">
       {% if catalog_page > 1 %}
-        <a href="{{ url_for('account.admin_home', tab='content', page=catalog_page-1, q=catalog_q, category=catalog_category, type=catalog_type, state=catalog_state, featured=catalog_featured) }}">Previous</a>
+        <a href="{{ url_for('account.admin_home', tab='catalog', page=catalog_page-1, q=catalog_q, category=catalog_category, type=catalog_type, state=catalog_state, featured=catalog_featured) }}">Previous</a>
       {% endif %}
-      <span>Page {{ catalog_page }} of {{ catalog_pages }} · {{ catalog_total }} titles</span>
+      {% for n in range(1, catalog_pages + 1) %}
+        {% if n == catalog_page %}
+          <span aria-current="page">{{ n }}</span>
+        {% else %}
+          <a href="{{ url_for('account.admin_home', tab='catalog', page=n, q=catalog_q, category=catalog_category, type=catalog_type, state=catalog_state, featured=catalog_featured) }}">{{ n }}</a>
+        {% endif %}
+      {% endfor %}
       {% if catalog_page < catalog_pages %}
-        <a href="{{ url_for('account.admin_home', tab='content', page=catalog_page+1, q=catalog_q, category=catalog_category, type=catalog_type, state=catalog_state, featured=catalog_featured) }}">Next</a>
+        <a href="{{ url_for('account.admin_home', tab='catalog', page=catalog_page+1, q=catalog_q, category=catalog_category, type=catalog_type, state=catalog_state, featured=catalog_featured) }}">Next</a>
       {% endif %}
     </nav>
+    {% endif %}
+    <p class="studio-count">{{ catalog_total }} titles</p>
   </section>
   {% endif %}
 
@@ -395,14 +649,14 @@
       </div>
     </header>
     <div class="category-edit">
-      <form method="post" action="{{ url_for('account.admin_category_create') }}" class="panel-card category-add">
+      <form method="post" action="{{ url_for('account.admin_category_create') }}" class="panel-card category-add fan-card desk-form">
         <h3>Add a category</h3>
         <label for="new-category-name">Name
-          <input id="new-category-name" name="name" required minlength="2" maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9 &amp;'./\-]*" title="Use letters, numbers, spaces, and &amp; ' . / -." value="{{ draft_name if error and not focus else '' }}" />
+          <input id="new-category-name" name="name" required minlength="2" maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9 &amp;'./\-]*" title="Use letters, numbers, spaces, and &amp; ' . / -." value="{{ draft_name if error and not focus else '' }}" placeholder="Anime" />
           {% if error and not focus and 'Description' not in error %}<small class="field-error" role="alert">{{ error }}</small>{% endif %}
         </label>
         <label for="new-category-description">Description
-          <textarea id="new-category-description" name="description" rows="3" maxlength="500">{{ draft_description if error and not focus else '' }}</textarea>
+          <textarea id="new-category-description" name="description" rows="3" data-rich placeholder="The line visitors read on this shelf">{{ draft_description if error and not focus else '' }}</textarea>
           {% if error and not focus and 'Description' in error %}<small class="field-error" role="alert">{{ error }}</small>{% endif %}
         </label>
         <button type="submit">Add category</button>
@@ -411,13 +665,13 @@
         {% set usage = category_usage.get(category.id, {}) %}
         {% set editing = focus == category.id|string %}
         <div class="panel-card">
-          <form method="post" action="{{ url_for('account.admin_category', category_id=category.id) }}">
+          <form method="post" action="{{ url_for('account.admin_category', category_id=category.id) }}" class="desk-form">
             <label for="cat-name-{{ category.id }}">Name
-              <input id="cat-name-{{ category.id }}" name="name" required minlength="2" maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9 &amp;'./\-]*" title="Use letters, numbers, spaces, and &amp; ' . / -." value="{{ draft_name if editing else category.name }}" />
+              <input id="cat-name-{{ category.id }}" name="name" required minlength="2" maxlength="50" pattern="[A-Za-z0-9][A-Za-z0-9 &amp;'./\-]*" title="Use letters, numbers, spaces, and &amp; ' . / -." value="{{ draft_name if editing else category.name }}" placeholder="Anime" />
               {% if editing and error and 'Description' not in error %}<small class="field-error" role="alert">{{ error }}</small>{% endif %}
             </label>
             <label for="cat-{{ category.id }}">Description
-              <textarea id="cat-{{ category.id }}" name="description" rows="3" maxlength="500">{{ draft_description if editing else (category.description or '') }}</textarea>
+              <textarea id="cat-{{ category.id }}" name="description" rows="3" data-rich placeholder="The line visitors read on this shelf">{{ draft_description if editing else (category.description or '') }}</textarea>
               {% if editing and error and 'Description' in error %}<small class="field-error" role="alert">{{ error }}</small>{% endif %}
             </label>
             <button type="submit">Save</button>
@@ -435,7 +689,7 @@
   </section>
   {% endif %}
 
-  {% if tab == 'users' %}
+  {% if tab == 'members' %}
   <section id="users" class="console-block">
     <header class="panel-head">
       <p class="step">05</p>
@@ -445,7 +699,7 @@
       </div>
     </header>
     <form method="get" class="filter-line">
-      <input type="hidden" name="tab" value="users" />
+      <input type="hidden" name="tab" value="members" />
       <input type="hidden" name="days" value="{{ days }}" />
       <label class="sr-only" for="q">Search members</label>
       <input id="q" name="q" value="{{ query }}" placeholder="Name or email" />
@@ -481,6 +735,7 @@
         </tbody>
       </table>
     </div>
+    {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'members', 'q': query} if query else {'tab': 'members'}) }}
   </section>
   {% endif %}
 
@@ -503,6 +758,7 @@
         <li>No admin actions yet.</li>
       {% endfor %}
     </ol>
+    {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'record'}) }}
   </section>
   {% endif %}
   {% include "auth/admin_manage.html" %}

@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.schemas_extra import UserAdminUpdateIn
 from app.serialize import log_activity, page_args, paginate, row_dict
-from app.security import utcnow
+from app.security import like_contains, utcnow
 from datetime import datetime
 
 
@@ -46,7 +46,7 @@ def list_users():
         q = q.filter(User.role == role)
     search = request.args.get("q")
     if search:
-        like = f"%{search}%"
+        like = like_contains(search)
         q = q.filter((User.email.ilike(like)) | (User.name.ilike(like)))
     q = q.order_by(User.created_at.desc())
     page, page_size = page_args()

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Email verified · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-anime auth{% endblock %}
+{% block content %}
+<section class="auth-panel">
+  <h1>Email verified</h1>
+  <p>{{ email }} is verified. You can sign in now.</p>
+  <p class="auth-links"><a href="{{ url_for('account.login') }}">Sign in</a></p>
+</section>
+{% endblock %}

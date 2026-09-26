@@ -10,8 +10,6 @@
     {% endif %}
     <div class="product-copy">
     <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('main.home') }}">Home</a>
-      <span aria-hidden="true">/</span>
       <a href="{{ url_for('main.merchandise') }}">Merchandise</a>
       <span aria-hidden="true">/</span>
       <span aria-current="page">{{ item.name }}</span>
@@ -19,11 +17,7 @@
     <p class="kicker">{{ category.name if category else 'Display' }}</p>
     <h1>{{ item.name }}</h1>
     <p class="lede">Display only. This hub does not sell or take orders.</p>
-    <div class="body-copy">
-      {% for paragraph in (item.description or '').split('\n\n') %}
-        {% if paragraph.strip() %}<p>{{ paragraph.strip() }}</p>{% endif %}
-      {% endfor %}
-    </div>
+    <div class="body-copy">{{ item.description|rich }}</div>
     {% if tags %}
       <p class="meta-line">{% for tag in tags %}<span class="chip">{{ tag }}</span> {% endfor %}</p>
     {% endif %}
@@ -36,16 +30,20 @@
         {% endfor %}
       </ul>
     {% endif %}
-    <form class="bookmark-bar" method="post" action="{{ url_for('account.bookmark_merchandise', item_id=item.item_id) }}">
-      {% if current_user and current_user.is_member %}
-        <label for="note">Note</label>
-        <input id="note" name="note" maxlength="280" value="{{ saved.note if saved else '' }}" />
-        <button type="submit" name="action" value="save">{{ 'Update bookmark' if saved else 'Bookmark' }}</button>
-        {% if saved %}<button type="submit" name="action" value="remove">Remove</button>{% endif %}
-      {% else %}
-        <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a>
-      {% endif %}
-    </form>
+    <section class="rate-card">
+      <form class="rate-note" method="post" action="{{ url_for('account.bookmark_merchandise', item_id=item.item_id) }}">
+        {% if current_user and current_user.is_member %}
+          <label for="note">Note</label>
+          <input id="note" name="note" maxlength="280" value="{{ saved.note if saved else '' }}" placeholder="A short note for you" />
+          <div class="rate-actions">
+            <button type="submit" name="action" value="save">{{ 'Update bookmark' if saved else 'Bookmark' }}</button>
+            {% if saved %}<button class="quiet" type="submit" name="action" value="remove">Remove</button>{% endif %}
+          </div>
+        {% else %}
+          <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a>
+        {% endif %}
+      </form>
+    </section>
     </div>
   </article>
 {% endblock %}

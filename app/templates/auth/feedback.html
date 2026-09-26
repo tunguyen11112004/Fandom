@@ -4,8 +4,7 @@
 {% block content %}
 <section class="auth-panel">
   <h1>Feedback</h1>
-  {% if sent %}<p>Got it. The desk can see it now.</p>{% endif %}
-  <form method="post" id="feedback-form">
+  <form method="post" id="feedback-form" class="desk-form fan-card">
     <label for="kind">Type</label>
     <select id="kind" name="kind" required>
       <option value="suggestion">Suggestion</option>
@@ -14,16 +13,16 @@
     </select>
     {% if not current_user %}
       <label for="email">Email</label>
-      <input id="email" name="email" type="email" required />
+      <input id="email" name="email" type="email" required placeholder="you@example.com" />
     {% endif %}
     <div id="bug-fields" hidden>
       <label for="page_url">Page where it happened</label>
       <input id="page_url" name="page_url" placeholder="/explore" />
       <label for="steps">Steps to see it again</label>
-      <textarea id="steps" name="steps" rows="3"></textarea>
+      <textarea id="steps" name="steps" rows="3" placeholder="What you clicked, and what you expected to see"></textarea>
     </div>
     <label for="message">Message</label>
-    <textarea id="message" name="message" rows="5" required></textarea>
+    <textarea id="message" name="message" rows="5" data-rich placeholder="What should we know?"></textarea>
     {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Send</button>
   </form>

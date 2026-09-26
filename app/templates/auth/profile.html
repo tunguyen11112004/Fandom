@@ -8,9 +8,9 @@
   {% if user.avatar_path %}
     <img class="avatar" src="{{ url_for('static', filename=user.avatar_path) }}" alt="" />
   {% endif %}
-  <form method="post" enctype="multipart/form-data" class="profile-form">
+  <form method="post" enctype="multipart/form-data" class="profile-form fan-card">
     <label for="name">Name
-      <input id="name" name="name" value="{{ user.name }}" required />
+      <input id="name" name="name" value="{{ user.name }}" required placeholder="Your name" />
     </label>
     <label for="favorite">Short favorite line
       <input id="favorite" name="favorite" value="{{ user.favorite }}" placeholder="One Piece, Arcane, BTS…" />
@@ -56,6 +56,6 @@
     {% if error %}<p class="auth-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Save</button>
   </form>
-  <p class="auth-links"><a href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
+  <p class="auth-links"><a class="button quiet" href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
 </section>
 {% endblock %}

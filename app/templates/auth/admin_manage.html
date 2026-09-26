@@ -1,3 +1,4 @@
+{% from "_pager.html" import pager %}
 {% if tab == 'fandoms' %}
 <section class="console-block">
   <header class="panel-head">
@@ -9,8 +10,8 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add a fandom</summary>
-  <form method="post" action="{{ url_for('account.admin_fandom_create') }}" class="desk-form form-grid">
-    <label>Name<input name="name" required minlength="2" maxlength="120" /></label>
+  <form method="post" action="{{ url_for('account.admin_fandom_create') }}" class="desk-form form-grid fan-card">
+    <label>Name<input name="name" required minlength="2" maxlength="120" placeholder="One Piece" /></label>
     <label>Category
       <select name="category_id" required>
         {% for category in categories %}
@@ -18,7 +19,7 @@
         {% endfor %}
       </select>
     </label>
-    <label class="span-2">Description<textarea name="description" rows="2" maxlength="500"></textarea></label>
+    <label class="span-2">Description<textarea name="description" rows="2" data-rich placeholder="What this fandom is about"></textarea></label>
     {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Add fandom</button>
   </form>
@@ -27,7 +28,7 @@
     <table class="catalog">
       <thead><tr><th>Name</th><th>Category</th><th>State</th><th></th></tr></thead>
       <tbody>
-        {% for fan in fandom_rows %}
+        {% for fan in fandom_table %}
           <tr>
             <td>{{ fan.name }}</td>
             <td>{% for category in categories if category.id == fan.category_id %}{{ category.name }}{% endfor %}</td>
@@ -35,14 +36,14 @@
             <td>
               <details {% if focus == fan.fandom_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_fandom_update', fandom_id=fan.fandom_id) }}" class="desk-form">
-                  <input name="name" value="{{ fan.name }}" required minlength="2" maxlength="120" aria-label="Name" />
+                <form method="post" action="{{ url_for('account.admin_fandom_update', fandom_id=fan.fandom_id) }}" class="desk-form fan-card">
+                  <input name="name" value="{{ fan.name }}" required minlength="2" maxlength="120" aria-label="Name" placeholder="One Piece" />
                   <select name="category_id" aria-label="Category">
                     {% for category in categories %}
                       <option value="{{ category.id }}" {% if category.id == fan.category_id %}selected{% endif %}>{{ category.name }}</option>
                     {% endfor %}
                   </select>
-                  <textarea name="description" rows="2" maxlength="500" aria-label="Description">{{ fan.description or '' }}</textarea>
+                  <textarea name="description" rows="2" data-rich aria-label="Description" placeholder="What this fandom is about">{{ fan.description or '' }}</textarea>
                   {% if focus == fan.fandom_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
                   <button type="submit">Save</button>
                 </form>
@@ -61,6 +62,7 @@
       </tbody>
     </table>
   </div>
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'fandoms'}) }}
 </section>
 {% endif %}
 
@@ -75,22 +77,22 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add a character</summary>
-  <form method="post" action="{{ url_for('account.admin_character_create') }}" class="desk-form form-grid">
-    <label>Name<input name="name" required minlength="2" maxlength="150" /></label>
-    <label>Alias<input name="alias" maxlength="150" /></label>
+  <form method="post" action="{{ url_for('account.admin_character_create') }}" class="desk-form form-grid fan-card">
+    <label>Name<input name="name" required minlength="2" maxlength="150" placeholder="Luffy" /></label>
+    <label>Alias<input name="alias" maxlength="150" placeholder="Straw Hat" /></label>
     <label>Category
       <select name="category_id" required>
         {% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}
       </select>
     </label>
     <label>Fandom
-      <select name="fandom_id">
+      <select name="fandom_id" data-fandoms>
         <option value="">None</option>
-        {% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}">{{ fan.name }}</option>{% endfor %}
+        {% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}">{{ fan.name }}</option>{% endfor %}
       </select>
     </label>
-    <label class="span-2">Bio<textarea name="bio" rows="3" maxlength="2000"></textarea></label>
-    <label class="span-2">Image link<input name="image_url" type="url" /></label>
+    <label class="span-2">Bio<textarea name="bio" rows="3" data-rich placeholder="Who they are, in a few sentences"></textarea></label>
+    <label class="span-2">Image link<input name="image_url" type="url" placeholder="https://" /></label>
     {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Add character</button>
   </form>
@@ -106,20 +108,20 @@
             <td>
               <details {% if focus == row.character_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_character_update', character_id=row.character_id) }}" class="desk-form">
-                  <input name="name" value="{{ row.name }}" required minlength="2" maxlength="150" aria-label="Name" />
-                  <input name="alias" value="{{ row.alias or '' }}" maxlength="150" aria-label="Alias" />
+                <form method="post" action="{{ url_for('account.admin_character_update', character_id=row.character_id) }}" class="desk-form fan-card">
+                  <input name="name" value="{{ row.name }}" required minlength="2" maxlength="150" aria-label="Name" placeholder="Luffy" />
+                  <input name="alias" value="{{ row.alias or '' }}" maxlength="150" aria-label="Alias" placeholder="Straw Hat" />
                   <select name="category_id" aria-label="Category">
                     {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
                   </select>
-                  <select name="fandom_id" aria-label="Fandom">
+                  <select name="fandom_id" data-fandoms aria-label="Fandom">
                     <option value="">None</option>
                     {% for fan in fandom_rows if fan.is_active or fan.fandom_id == row.fandom_id %}
-                      <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                      <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
                     {% endfor %}
                   </select>
-                  <textarea name="bio" rows="3" maxlength="2000" aria-label="Bio">{{ row.bio or '' }}</textarea>
-                  <input name="image_url" value="{{ row.image_url or '' }}" aria-label="Image link" />
+                  <textarea name="bio" rows="3" data-rich aria-label="Bio" placeholder="Who they are, in a few sentences">{{ row.bio or '' }}</textarea>
+                  <input name="image_url" value="{{ row.image_url or '' }}" aria-label="Image link" placeholder="https://" />
                   {% if focus == row.character_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
                   <button type="submit">Save</button>
                 </form>
@@ -135,10 +137,11 @@
       </tbody>
     </table>
   </div>
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'characters'}) }}
 </section>
 {% endif %}
 
-{% if tab == 'merchandise' %}
+{% if tab == 'merch' %}
 <section class="console-block">
   <header class="panel-head">
     <p class="step">06</p>
@@ -149,20 +152,20 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add merchandise</summary>
-  <form method="post" action="{{ url_for('account.admin_merch_create') }}" class="desk-form form-grid">
-    <label>Name<input name="name" required minlength="2" maxlength="200" /></label>
+  <form method="post" action="{{ url_for('account.admin_merch_create') }}" class="desk-form form-grid fan-card">
+    <label>Name<input name="name" required minlength="2" maxlength="200" placeholder="Figure, poster, or lightstick" /></label>
     <label>Category
       <select name="category_id" required>
         {% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}
       </select>
     </label>
     <label>Fandom
-      <select name="fandom_id"><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}">{{ fan.name }}</option>{% endfor %}</select>
+      <select name="fandom_id" data-fandoms><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}">{{ fan.name }}</option>{% endfor %}</select>
     </label>
     <label>Release date<input name="release_date" type="date" /></label>
-    <label class="span-2">Description<textarea name="description" rows="2" maxlength="2000"></textarea></label>
-    <label>Image link<input name="image_url" type="url" /></label>
-    <label>Reference link<input name="reference_url" type="url" /></label>
+    <label class="span-2">Description<textarea name="description" rows="2" data-rich placeholder="What is on display"></textarea></label>
+    <label>Image link<input name="image_url" type="url" placeholder="https://" /></label>
+    <label>Reference link<input name="reference_url" type="url" placeholder="https://" /></label>
     <fieldset class="span-2">
       <legend>Tags</legend>
       {% for tag in tag_rows %}<label class="check"><input type="checkbox" name="tags" value="{{ tag.tag_id }}" /> {{ tag.name }}</label>{% endfor %}
@@ -183,21 +186,21 @@
             <td>
               <details {% if focus == item.item_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_merch_update', item_id=item.item_id) }}" class="desk-form">
-                  <input name="name" value="{{ item.name }}" required minlength="2" maxlength="200" aria-label="Name" />
+                <form method="post" action="{{ url_for('account.admin_merch_update', item_id=item.item_id) }}" class="desk-form fan-card">
+                  <input name="name" value="{{ item.name }}" required minlength="2" maxlength="200" aria-label="Name" placeholder="Figure, poster, or lightstick" />
                   <select name="category_id" aria-label="Category">
                     {% for category in categories %}<option value="{{ category.id }}" {% if category.id == item.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
                   </select>
-                  <select name="fandom_id" aria-label="Fandom">
+                  <select name="fandom_id" data-fandoms aria-label="Fandom">
                     <option value="">None</option>
                     {% for fan in fandom_rows if fan.is_active or fan.fandom_id == item.fandom_id %}
-                      <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == item.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                      <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if fan.fandom_id == item.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
                     {% endfor %}
                   </select>
                   <input name="release_date" type="date" value="{{ item.release_date.isoformat() if item.release_date else '' }}" aria-label="Release date" />
-                  <textarea name="description" rows="2" maxlength="2000" aria-label="Description">{{ item.description or '' }}</textarea>
-                  <input name="image_url" value="{{ item.image_url or '' }}" aria-label="Image link" />
-                  <input name="reference_url" value="{{ item.reference_url or '' }}" aria-label="Reference link" />
+                  <textarea name="description" rows="2" data-rich aria-label="Description" placeholder="What is on display">{{ item.description or '' }}</textarea>
+                  <input name="image_url" value="{{ item.image_url or '' }}" aria-label="Image link" placeholder="https://" />
+                  <input name="reference_url" value="{{ item.reference_url or '' }}" aria-label="Reference link" placeholder="https://" />
                   {% for tag in tag_rows %}
                     <label class="check"><input type="checkbox" name="tags" value="{{ tag.tag_id }}" {% if tag.tag_id in merch_tag_map.get(item.item_id, []) %}checked{% endif %} /> {{ tag.name }}</label>
                   {% endfor %}
@@ -217,6 +220,7 @@
       </tbody>
     </table>
   </div>
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'merch'}) }}
 </section>
 {% endif %}
 
@@ -231,29 +235,29 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add an event</summary>
-  <form method="post" action="{{ url_for('account.admin_event_create') }}" class="desk-form form-grid">
-    <label>Title<input name="title" required minlength="2" maxlength="200" /></label>
+  <form method="post" action="{{ url_for('account.admin_event_create') }}" class="desk-form form-grid fan-card">
+    <label>Title<input name="title" required minlength="2" maxlength="200" placeholder="Convention, concert, or meetup" /></label>
     <label>Type
       <select name="event_type">
         {% for kind in ['convention', 'concert', 'meetup', 'festival', 'expo', 'other'] %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
       </select>
     </label>
-    <label>City<input name="city" required minlength="2" maxlength="100" /></label>
-    <label>Country<input name="country" maxlength="100" /></label>
-    <label>Venue<input name="venue" maxlength="255" /></label>
-    <label>Address<input name="address" maxlength="255" /></label>
+    <label>City<input name="city" required minlength="2" maxlength="100" placeholder="Los Angeles" /></label>
+    <label>Country<input name="country" maxlength="100" placeholder="United States" /></label>
+    <label>Venue<input name="venue" maxlength="255" placeholder="Hall or park name" /></label>
+    <label>Address<input name="address" maxlength="255" placeholder="Street and number" /></label>
     <label>Starts<input name="start_at" type="datetime-local" required /></label>
     <label>Ends<input name="end_at" type="datetime-local" /></label>
-    <label>Latitude<input name="latitude" inputmode="decimal" /></label>
-    <label>Longitude<input name="longitude" inputmode="decimal" /></label>
+    <label>Latitude<input name="latitude" inputmode="decimal" placeholder="34.05" /></label>
+    <label>Longitude<input name="longitude" inputmode="decimal" placeholder="-118.25" /></label>
     <label>Category
       <select name="category_id"><option value="">None</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
     </label>
     <label>Fandom
-      <select name="fandom_id"><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}">{{ fan.name }}</option>{% endfor %}</select>
+      <select name="fandom_id" data-fandoms><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}">{{ fan.name }}</option>{% endfor %}</select>
     </label>
-    <label class="span-2">Description<textarea name="description" rows="2" maxlength="2000"></textarea></label>
-    <label class="span-2">Ticket link<input name="ticket_url" type="url" /></label>
+    <label class="span-2">Description<textarea name="description" rows="2" data-rich placeholder="Who it is for, and what happens there"></textarea></label>
+    <label class="span-2">Ticket link<input name="ticket_url" type="url" placeholder="https://" /></label>
     {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Add event</button>
   </form>
@@ -270,33 +274,33 @@
             <td>
               <details {% if focus == row.event_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_event_update', event_id=row.event_id) }}" class="desk-form">
-                  <input name="title" value="{{ row.title }}" required minlength="2" maxlength="200" aria-label="Title" />
+                <form method="post" action="{{ url_for('account.admin_event_update', event_id=row.event_id) }}" class="desk-form fan-card">
+                  <input name="title" value="{{ row.title }}" required minlength="2" maxlength="200" aria-label="Title" placeholder="Convention, concert, or meetup" />
                   <select name="event_type" aria-label="Type">
                     {% for kind in ['convention', 'concert', 'meetup', 'festival', 'expo', 'other'] %}
                       <option value="{{ kind }}" {% if row.event_type == kind %}selected{% endif %}>{{ kind }}</option>
                     {% endfor %}
                   </select>
-                  <input name="city" value="{{ row.city }}" required aria-label="City" />
-                  <input name="country" value="{{ row.country or '' }}" aria-label="Country" />
-                  <input name="venue" value="{{ row.venue or '' }}" aria-label="Venue" />
-                  <input name="address" value="{{ row.address or '' }}" aria-label="Address" />
+                  <input name="city" value="{{ row.city }}" required aria-label="City" placeholder="Los Angeles" />
+                  <input name="country" value="{{ row.country or '' }}" aria-label="Country" placeholder="United States" />
+                  <input name="venue" value="{{ row.venue or '' }}" aria-label="Venue" placeholder="Hall or park name" />
+                  <input name="address" value="{{ row.address or '' }}" aria-label="Address" placeholder="Street and number" />
                   <input name="start_at" type="datetime-local" value="{{ row.start_at.strftime('%Y-%m-%dT%H:%M') if row.start_at else '' }}" required aria-label="Starts" />
                   <input name="end_at" type="datetime-local" value="{{ row.end_at.strftime('%Y-%m-%dT%H:%M') if row.end_at else '' }}" aria-label="Ends" />
-                  <input name="latitude" value="{{ row.latitude if row.latitude is not none else '' }}" aria-label="Latitude" />
-                  <input name="longitude" value="{{ row.longitude if row.longitude is not none else '' }}" aria-label="Longitude" />
+                  <input name="latitude" value="{{ row.latitude if row.latitude is not none else '' }}" aria-label="Latitude" placeholder="34.05" />
+                  <input name="longitude" value="{{ row.longitude if row.longitude is not none else '' }}" aria-label="Longitude" placeholder="-118.25" />
                   <select name="category_id" aria-label="Category">
                     <option value="">None</option>
                     {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
                   </select>
-                  <select name="fandom_id" aria-label="Fandom">
+                  <select name="fandom_id" data-fandoms aria-label="Fandom">
                     <option value="">None</option>
                     {% for fan in fandom_rows if fan.is_active or fan.fandom_id == row.fandom_id %}
-                      <option value="{{ fan.fandom_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                      <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
                     {% endfor %}
                   </select>
-                  <textarea name="description" rows="2" aria-label="Description">{{ row.description or '' }}</textarea>
-                  <input name="ticket_url" value="{{ row.ticket_url or '' }}" aria-label="Ticket link" />
+                  <textarea name="description" rows="2" data-rich aria-label="Description" placeholder="Who it is for, and what happens there">{{ row.description or '' }}</textarea>
+                  <input name="ticket_url" value="{{ row.ticket_url or '' }}" aria-label="Ticket link" placeholder="https://" />
                   {% if focus == row.event_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
                   <button type="submit">Save</button>
                 </form>
@@ -312,6 +316,7 @@
       </tbody>
     </table>
   </div>
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'events'}) }}
 </section>
 {% endif %}
 
@@ -326,8 +331,8 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add a tag</summary>
-  <form method="post" action="{{ url_for('account.admin_tag_create') }}" class="desk-form">
-    <label>Name<input name="name" required minlength="2" maxlength="60" /></label>
+  <form method="post" action="{{ url_for('account.admin_tag_create') }}" class="desk-form fan-card">
+    <label>Name<input name="name" required minlength="2" maxlength="60" placeholder="Limited Edition" /></label>
     {% if error and not focus %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Add tag</button>
   </form>
@@ -340,14 +345,14 @@
           <tr>
             <td>{{ tag.name }}</td>
             <td>
-              <form method="post" action="{{ url_for('account.admin_tag_update', tag_id=tag.tag_id) }}" class="desk-form">
-                <input name="name" value="{{ tag.name }}" required minlength="2" maxlength="60" aria-label="Name" />
-                {% if focus == tag.tag_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+              <form method="post" action="{{ url_for('account.admin_tag_update', tag_id=tag.tag_id) }}" class="desk-form fan-card">
+                <input name="name" value="{{ tag.name }}" required minlength="2" maxlength="60" aria-label="Name" placeholder="Limited Edition" />
                 <button type="submit">Save</button>
               </form>
               <form method="post" action="{{ url_for('account.admin_tag_update', tag_id=tag.tag_id) }}" onsubmit="return confirm({{ ('Delete ' ~ tag.name ~ '?')|tojson }})">
                 <button type="submit" name="action" value="delete" class="btn-quiet">Delete</button>
               </form>
+              {% if focus == tag.tag_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
             </td>
           </tr>
         {% else %}
@@ -356,10 +361,11 @@
       </tbody>
     </table>
   </div>
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'tags'}) }}
 </section>
 {% endif %}
 
-{% if tab == 'faqs' %}
+{% if tab == 'faq' %}
 <section class="console-block">
   <header class="panel-head">
     <p class="step">09</p>
@@ -370,9 +376,9 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add an FAQ</summary>
-  <form method="post" action="{{ url_for('account.admin_faq_create') }}" class="desk-form form-grid">
-    <label class="span-2">Question<textarea name="question" rows="2" required maxlength="500"></textarea></label>
-    <label class="span-2">Answer<textarea name="answer" rows="3" required maxlength="2000"></textarea></label>
+  <form method="post" action="{{ url_for('account.admin_faq_create') }}" class="desk-form form-grid fan-card">
+    <label class="span-2">Question<textarea name="question" rows="2" required maxlength="500" placeholder="What a fan might ask"></textarea></label>
+    <label class="span-2">Answer<textarea name="answer" rows="3" required maxlength="2000" placeholder="The short answer Mina should give"></textarea></label>
     <label>Keywords<input name="keywords" maxlength="500" placeholder="tickets, map" /></label>
     <label>Category
       <select name="category_id"><option value="">Any</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
@@ -393,10 +399,10 @@
             <td>
               <details {% if focus == row.faq_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_faq_update', faq_id=row.faq_id) }}" class="desk-form">
-                  <textarea name="question" rows="2" required maxlength="500" aria-label="Question">{{ row.question }}</textarea>
-                  <textarea name="answer" rows="3" required maxlength="2000" aria-label="Answer">{{ row.answer }}</textarea>
-                  <input name="keywords" value="{{ row.keywords or '' }}" maxlength="500" aria-label="Keywords" />
+                <form method="post" action="{{ url_for('account.admin_faq_update', faq_id=row.faq_id) }}" class="desk-form fan-card">
+                  <textarea name="question" rows="2" required maxlength="500" aria-label="Question" placeholder="What a fan might ask">{{ row.question }}</textarea>
+                  <textarea name="answer" rows="3" required maxlength="2000" aria-label="Answer" placeholder="The short answer Mina should give">{{ row.answer }}</textarea>
+                  <input name="keywords" value="{{ row.keywords or '' }}" maxlength="500" aria-label="Keywords" placeholder="tickets, map" />
                   <select name="category_id" aria-label="Category">
                     <option value="">Any</option>
                     {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
@@ -417,6 +423,7 @@
       </tbody>
     </table>
   </div>
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'faq'}) }}
   <h3>Questions the chatbot could not match</h3>
   <ul>
     {% for row in missed_questions %}

@@ -6,6 +6,7 @@ from app.errors import AuthError
 from app.http_json import ok, parse_body
 from app.models import Category, CharacterProfile, Content, Fandom
 from app.schemas_extra import CharacterIn
+from app.security import like_contains
 from app.serialize import arg_int, breadcrumbs, log_activity, page_args, paginate, row_dict
 
 bp = Blueprint("characters", __name__)
@@ -24,7 +25,7 @@ def list_characters():
         q = q.filter(CharacterProfile.fandom_id == fan)
     qtext = request.args.get("q")
     if qtext:
-        like = f"%{qtext}%"
+        like = like_contains(qtext)
         q = q.filter(CharacterProfile.name.ilike(like))
     q = q.order_by(CharacterProfile.name.asc())
     page, page_size = page_args()

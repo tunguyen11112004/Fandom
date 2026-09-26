@@ -9,7 +9,7 @@ from app.http_json import ok, parse_body
 from app.models import Category, ChatbotFaq, ChatbotQuery, ChatSession, Content, UserCategory
 from app.schemas_extra import ChatMessageIn, FaqIn, OnboardingIn
 from app.serialize import log_activity, row_dict
-from app.security import utcnow
+from app.security import like_contains, utcnow
 
 bp = Blueprint("chat", __name__)
 bp.strict_slashes = False
@@ -70,7 +70,7 @@ def send_message():
         ]
     else:
         answer = FALLBACK
-        like = f"%{body.message}%"
+        like = like_contains(body.message)
         related = [
             row_dict(c)
             for c in db.query(Content).filter(Content.status == "published", Content.title.ilike(like)).limit(5).all()

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     seed_admin_email: str = "admin@fanhubplus.com"
     seed_admin_password: str = "Admin123!"
     seed_admin_name: str = "Fan Hub Admin"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
 
 
 settings = Settings()

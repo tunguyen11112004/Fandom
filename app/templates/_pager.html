@@ -1,0 +1,40 @@
+{% macro pager(page, pages, endpoint, extra=none, page_key='page') %}
+  {% if pages > 1 %}
+    {% set bag = extra if extra else {} %}
+    <nav class="pager" aria-label="Pages">
+      {% if page > 1 %}
+        {% set prev = bag.copy() %}
+        {% set _ = prev.update({page_key: page - 1}) %}
+        <a href="{{ url_for(endpoint, **prev) }}">Previous</a>
+      {% endif %}
+      {% set start = [page - 3, 1]|max %}
+      {% set stop = [page + 3, pages]|min %}
+      {% if start > 1 %}
+        {% set first = bag.copy() %}
+        {% set _ = first.update({page_key: 1}) %}
+        <a href="{{ url_for(endpoint, **first) }}">1</a>
+        {% if start > 2 %}<span>…</span>{% endif %}
+      {% endif %}
+      {% for n in range(start, stop + 1) %}
+        {% if n == page %}
+          <span aria-current="page">{{ n }}</span>
+        {% else %}
+          {% set params = bag.copy() %}
+          {% set _ = params.update({page_key: n}) %}
+          <a href="{{ url_for(endpoint, **params) }}">{{ n }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if stop < pages %}
+        {% if stop < pages - 1 %}<span>…</span>{% endif %}
+        {% set last = bag.copy() %}
+        {% set _ = last.update({page_key: pages}) %}
+        <a href="{{ url_for(endpoint, **last) }}">{{ pages }}</a>
+      {% endif %}
+      {% if page < pages %}
+        {% set nxt = bag.copy() %}
+        {% set _ = nxt.update({page_key: page + 1}) %}
+        <a href="{{ url_for(endpoint, **nxt) }}">Next</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+{% endmacro %}

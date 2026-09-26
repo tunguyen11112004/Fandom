@@ -1,19 +1,15 @@
 {% extends "base.html" %}
+{% from "_pager.html" import pager %}
 {% block title %}Characters · Fan Hub Plus{% endblock %}
 {% block body_class %}cast-room{% endblock %}
 {% block content %}
   <section class="cast">
     <header class="cast-head">
       <div>
-        <nav class="crumbs" aria-label="Breadcrumb">
-          <a href="{{ url_for('main.home') }}">Home</a>
-          <span aria-hidden="true">/</span>
-          <span aria-current="page">Characters</span>
-        </nav>
         <h1>The cast</h1>
         <p>Portraits grouped by fandom. Open a face for the bio.</p>
       </div>
-      <form method="get">
+      <form class="cast-filter" method="get">
         {% if fandom %}<input type="hidden" name="fandom" value="{{ fandom }}" />{% endif %}
         <label for="category">Shelf</label>
         <select id="category" name="category" onchange="this.form.requestSubmit()">
@@ -54,5 +50,6 @@
     {% else %}
       <p class="empty">No character cards match that filter.</p>
     {% endif %}
+    {{ pager(page, pages, 'main.characters', list_query) }}
   </section>
 {% endblock %}

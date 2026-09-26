@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_pager.html" import pager %}
 {% block title %}Events · Fan Hub Plus{% endblock %}
 {% block body_class %}stack-map{% endblock %}
 {% block extra_head %}
@@ -6,15 +7,16 @@
 {% endblock %}
 {% block content %}
     <header class="page-head">
-      <nav class="crumbs" aria-label="Breadcrumb">
-        <a href="{{ url_for('main.home') }}">Home</a>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Events</span>
-      </nav>
       <h1>Near you</h1>
       <p>Allow location to sort by distance, or pick a city. Ticket links open in a new tab. Nothing is sold here.</p>
     </header>
-  <form class="filters" method="get">
+  <form class="filters studio-filter" method="get">
+    <header class="studio-filter-head">
+      <div>
+        <p class="kicker">Find a date</p>
+        <h2>City, type, and week</h2>
+      </div>
+    </header>
     <div>
       <label for="city">City</label>
       <select id="city" name="city">
@@ -50,10 +52,13 @@
       <label for="to">To</label>
       <input id="to" name="to" type="date" value="{{ date_to }}" />
     </div>
-    <div class="filter-actions">
-      <button type="submit">Filter</button>
-      <a href="{{ url_for('main.events') }}">Clear</a>
-      <button type="button" id="use-location">Use my location</button>
+    <div class="studio-filter-foot">
+      <span></span>
+      <div class="filter-actions">
+        <a href="{{ url_for('main.events') }}">Clear</a>
+        <button class="quiet" type="button" id="use-location">Use my location</button>
+        <button type="submit">Filter</button>
+      </div>
     </div>
   </form>
   <section class="section events-board">
@@ -65,20 +70,32 @@
           <p class="kicker">{{ event.kind }}</p>
           <h2>{{ event.title }}</h2>
           <p>{{ event.city }}{% if event.venue %} · {{ event.venue }}{% endif %} · <time>{{ event.when }}</time>{% if event.distance_km %} · {{ event.distance_km }} km{% endif %}</p>
-          {% if event.description %}<p>{{ event.description }}</p>{% endif %}
-          {% if event.ticket_url %}
-            <p><a href="{{ event.ticket_url }}" target="_blank" rel="noreferrer">Tickets</a></p>
-          {% endif %}
-          {% if current_user and current_user.is_member %}
-            <form class="bookmark-bar" method="post" action="{{ url_for('account.bookmark_event', event_id=event.id) }}">
-              <button type="submit">Bookmark this date</button>
-            </form>
+          {% if event.description %}<div class="rich-copy">{{ event.description|rich }}</div>{% endif %}
+          {% if event.ticket_url or (current_user and current_user.is_member) %}
+          <div class="event-actions">
+            {% if event.ticket_url %}
+              <a class="event-tickets" href="{{ event.ticket_url }}" target="_blank" rel="noreferrer">Tickets</a>
+            {% endif %}
+            {% if current_user and current_user.is_member %}
+              <form class="event-save" method="post" action="{{ url_for('account.bookmark_event', event_id=event.id) }}">
+                <div class="rate-actions">
+                  {% if event.id in saved_event_ids %}
+                    <button type="submit" name="action" value="save">Saved</button>
+                    <button class="quiet" type="submit" name="action" value="remove">Remove</button>
+                  {% else %}
+                    <button type="submit" name="action" value="save">Bookmark this date</button>
+                  {% endif %}
+                </div>
+              </form>
+            {% endif %}
+          </div>
           {% endif %}
         </li>
       {% else %}
         <li><p class="empty">No events match. Widen the city filter or switch the map pins.</p></li>
       {% endfor %}
     </ol>
+    {{ pager(page, pages, 'main.events', event_query) }}
   </section>
 {% endblock %}
 {% block scripts %}
@@ -120,6 +137,14 @@
         if (!nextList || !nextData || !list || !data) throw new Error("filter");
         list.replaceWith(nextList);
         data.replaceWith(nextData);
+        const nextPager = doc.querySelector(".events-board .pager");
+        const pager = board.querySelector(".pager");
+        if (nextPager) {
+          if (pager) pager.replaceWith(nextPager);
+          else board.appendChild(nextPager);
+        } else if (pager) {
+          pager.remove();
+        }
         if (push) history.pushState({}, "", url);
         syncForm(url);
         if (window.fanhubMountMap) window.fanhubMountMap();

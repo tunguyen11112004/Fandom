@@ -6,9 +6,9 @@
   <h1>Choose a new password</h1>
   <form method="post">
     <label for="password">New password</label>
-    <input id="password" name="password" type="password" required autocomplete="new-password" />
+    <input id="password" name="password" type="password" required autocomplete="new-password" placeholder="At least 8 characters, with a letter and a number" />
     <label for="confirm">Confirm password</label>
-    <input id="confirm" name="confirm" type="password" required autocomplete="new-password" />
+    <input id="confirm" name="confirm" type="password" required autocomplete="new-password" placeholder="Type the password again" />
     {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Update password</button>
   </form>

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_pager.html" import pager %}
+{% block title %}What you sent · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-cosplay auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <header class="desk-top">
+    <div>
+      <p class="kicker">Member desk</p>
+      <h1>What you sent</h1>
+      <p>Every piece you send stays here. Remove one if you no longer want it posted. A published piece also leaves the public shelves.</p>
+    </div>
+    <nav class="desk-actions" aria-label="Piece actions">
+      <a href="{{ url_for('account.dashboard') }}">Bookmarks</a>
+      <a href="{{ url_for('account.submissions') }}">Send a piece</a>
+    </nav>
+  </header>
+
+  <form method="get" class="ticket-filters">
+    <label for="piece-state">Status
+      <select id="piece-state" name="state">
+        <option value="all" {% if state == 'all' %}selected{% endif %}>All</option>
+        <option value="pending" {% if state == 'pending' %}selected{% endif %}>Pending</option>
+        <option value="rejected" {% if state == 'rejected' %}selected{% endif %}>Sent back</option>
+        <option value="approved" {% if state == 'approved' %}selected{% endif %}>Published</option>
+      </select>
+    </label>
+    <label for="piece-q">Search
+      <input id="piece-q" name="q" value="{{ q }}" placeholder="Title" />
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if rows %}
+    <ul class="desk-list">
+      {% for row in rows %}
+        <li>
+          <div class="row-title">
+            <strong>{{ row.title }}</strong>
+            <span class="chip chip-{{ row.status }}">{% if row.status == 'approved' %}Published{% elif row.status == 'rejected' %}Sent back{% else %}Pending{% endif %}</span>
+          </div>
+          <p>{{ row.category.name }}{% if row.fandom %} · {{ row.fandom.name }}{% endif %} · {{ row.content_type }}</p>
+          {% if row.summary %}<p>{{ row.summary }}</p>{% endif %}
+          {% if row.status == 'rejected' and row.reject_reason %}<p>{{ row.reject_reason }}</p>{% endif %}
+          <div class="piece-actions">
+            {% if row.status in ['pending', 'rejected'] %}
+              <a class="button" href="{{ url_for('account.submissions', edit=row.id) }}">View and edit</a>
+            {% elif row.published_item and row.published_item.published %}
+              <a class="button" href="{{ url_for('main.content_detail', slug=row.published_item.slug) }}">Open the published page</a>
+            {% endif %}
+            <form method="post" action="{{ url_for('account.delete_sent_piece', submission_id=row.id) }}">
+              <input type="hidden" name="state" value="{{ state }}" />
+              <input type="hidden" name="q" value="{{ q }}" />
+              <input type="hidden" name="page" value="{{ page }}" />
+              <button class="quiet" type="submit">Remove</button>
+            </form>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    {{ pager(page, pages, 'account.sent_pieces', {'state': state, 'q': q}) }}
+  {% else %}
+    <p class="empty-line">{% if q or state != 'all' %}Nothing matches this filter.{% else %}You have not sent a fan piece yet.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

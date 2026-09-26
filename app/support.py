@@ -1,6 +1,12 @@
+import json
+import urllib.error
+import urllib.request
+
 from sqlalchemy import or_
 
-from .models import Category, ChatbotFaq, Content, ContentGenre, Genre
+from .config import settings
+from .models import Category, CharacterProfile, ChatbotFaq, Content, ContentGenre, Genre
+from .security import like_contains
 from .news import news_items
 from .series import SERIES, find_series
 
@@ -15,10 +21,10 @@ GUIDE = [
     },
     {
         "text": "Featured is where I send people who ask what's going on. The editors pick those pieces, and you can split them by shelf. Every one opens right here on the hub. One more thing after this.",
-        "links": [{"label": "Open featured", "href": "/news"}],
+        "links": [{"label": "Open featured", "href": "/featured"}],
     },
     {
-        "text": "That's the lay of the land. Members sign in, admins use a separate gate, and merchandise stays on display. Nothing here is for sale. If you tell me a title or a fandom, I'll pull it up. What were you actually looking for?",
+        "text": "That's the lay of the land. Members and admins both use Sign in, and merchandise stays on display. Nothing here is for sale. If you tell me a title or a fandom, I'll pull it up. What were you actually looking for?",
         "links": [{"label": "See the map", "href": "/sitemap"}],
     },
 ]
@@ -62,7 +68,7 @@ def _small_talk(text):
 def _faq(text):
     if any(word in text for word in ("bookmark", "save", "account", "sign in", "signin", "login", "log in", "password", "profile", "register", "forgot")):
         return {
-            "text": "Members sign in on the Sign in page. The demo member is mina@fanhub.plus, password MemberHub#2026. New people can register, and Forgot password sends a reset link on this demo. Admins do not use that gate. After you sign in you can edit your name and favorite on your profile.",
+            "text": "Members and admins both use the Sign in page. An admin account opens the control panel. New people can register, and Forgot password sends a reset code. After you sign in you can edit your name and favorite on your profile.",
             "links": [
                 {"label": "Sign in", "href": "/login"},
                 {"label": "Register", "href": "/register"},
@@ -71,8 +77,8 @@ def _faq(text):
         }
     if "admin" in text:
         return {
-            "text": "The admin gate is separate from member sign-in. The demo admin is admin@fanhub.plus, password AdminHub#2026. From there you can see how many members and titles are on the desk. Merchandise still stays display-only.",
-            "links": [{"label": "Admin gate", "href": "/admin/login"}],
+            "text": "Admins sign in on the same Sign in page. That opens the control panel, where you can see members, titles, and the review queue. Merchandise still stays display-only.",
+            "links": [{"label": "Sign in", "href": "/login"}],
         }
     if any(word in text for word in ("event", "meetup", "expo", "calendar", "map", "where is the office", "headquarters", "address")):
         return {
@@ -102,7 +108,7 @@ def _faq(text):
         titles = ". And ".join(item["title"] for item in headlines)
         return {
             "text": f"Editors are featuring: {titles}. I can open the rest if you want to skim.",
-            "links": [{"label": "Show me featured", "href": "/news"}],
+            "links": [{"label": "Show me featured", "href": "/featured"}],
         }
     asking_how = any(word in text.split() for word in ("how", "where", "help"))
     if (
@@ -117,7 +123,7 @@ def _faq(text):
         }
     if "sitemap" in text or ("where" in text and "page" in text):
         return {
-            "text": "Right now you've got Home, Anime, Manga, Explore, News, Events, Sign in, Register, and the admin gate. The sitemap is the short list of those.",
+            "text": "Right now you've got Home, Explore, Media, Featured, Characters, Merch, Events, Contribute, Sign in, and Register. The sitemap is the short list of those.",
             "links": [{"label": "Open the sitemap", "href": "/sitemap"}],
         }
     if any(word in text for word in ("dashboard", "my desk", "member desk", "bookmark", "note")):
@@ -128,7 +134,7 @@ def _faq(text):
     if any(word in text for word in ("fan piece", "fan post", "submission", "submit", "send a piece")):
         return {
             "text": "Members can send a fan piece from the desk. You need a title, a category, the writing itself, and a check that you have the right to share it. It stays pending until an admin publishes it or sends it back with a reason. If it comes back, revise it and send it again.",
-            "links": [{"label": "Send a piece", "href": "/submissions"}],
+            "links": [{"label": "Send a piece", "href": "/contribute"}],
         }
     if any(word in text for word in ("feedback", "bug", "suggestion", "complaint")):
         return {
@@ -196,7 +202,7 @@ def _series_reply(text):
 
 
 def _catalog(text):
-    like = f"%{text}%"
+    like = like_contains(text)
     matches = (
         Content.query.join(Category)
         .outerjoin(ContentGenre, ContentGenre.content_id == Content.content_id)
@@ -218,7 +224,7 @@ def _catalog(text):
             if len(word) < 4:
                 continue
             matches = (
-                Content.query.filter(Content.title.ilike(f"%{word}%"))
+                Content.query.filter(Content.title.ilike(like_contains(word)))
                 .order_by(Content.popularity_score.desc())
                 .limit(3)
                 .all()
@@ -255,7 +261,94 @@ def _stored_faq(text):
     return None
 
 
-def reply_to(message, guide_step):
+def site_brief():
+    shelves = [row.name for row in Category.query.order_by(Category.name.asc()).limit(12).all()]
+    titles = (
+        Content.query.filter(Content.status == "published")
+        .order_by(Content.popularity_score.desc())
+        .limit(24)
+        .all()
+    )
+    characters = CharacterProfile.query.order_by(CharacterProfile.name.asc()).limit(24).all()
+    faqs = ChatbotFaq.query.filter_by(is_active=True).order_by(ChatbotFaq.faq_id.asc()).limit(12).all()
+    lines = [
+        "Fan Hub Plus is a fandom desk. Nothing is sold here. Merchandise and event tickets are display only.",
+        "Headquarters: 800 Wilshire Blvd, Suite 1200, Los Angeles, CA 90017. hello@fanhub.plus. 213 555 0198.",
+        "Pages: Home /, Explore /explore, Featured /featured, Media /media, Characters /characters, Merch /merch, Events /events, Contribute /contribute.",
+        "Shelves: " + ", ".join(shelves),
+        "Titles on the hub: " + "; ".join(f"{item.title} ({item.type})" for item in titles),
+        "Characters on the hub: " + "; ".join(row.name for row in characters),
+    ]
+    if faqs:
+        lines.append("Staff answers:")
+        lines.extend(f"- {row.question}: {row.answer}" for row in faqs)
+    return "\n".join(lines)
+
+
+def _text_from_gemini(data):
+    written = data.get("output_text")
+    if isinstance(written, str) and written.strip():
+        return written.strip()
+    chunks = []
+    for step in data.get("steps") or []:
+        if step.get("type") != "model_output":
+            continue
+        for block in step.get("content") or []:
+            if isinstance(block, dict) and block.get("text"):
+                chunks.append(block["text"])
+    if chunks:
+        return " ".join(chunks).strip()
+    try:
+        parts = data["candidates"][0]["content"]["parts"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    text = " ".join(part.get("text", "") for part in parts).strip()
+    return text or None
+
+
+def _gemini_reply(message):
+    key = (settings.gemini_api_key or "").strip()
+    if not key:
+        return None
+    model = (settings.gemini_model or "gemini-3.8-flash").strip()
+    prompt = (
+        "You are Mina, support for Fan Hub Plus. Reply in the same language the visitor used. "
+        "Two or three short sentences, like chat. "
+        "You only talk about fandom on this hub: the shelves, titles, characters, trailers, featured pieces, "
+        "display merch, and fan events listed in the notes. "
+        "If the visitor asks about anything else (homework, news outside the hub, coding, general knowledge, personal advice), "
+        "say you only help with fandom on Fan Hub Plus and invite them to name a series. "
+        "Do not invent titles, characters, prices, or a checkout. If a name is not in the notes, say it is not on the shelf and point them to Explore.\n\n"
+        + site_brief()
+    )
+    body = {
+        "model": model,
+        "input": message,
+        "system_instruction": prompt,
+        "store": False,
+        "generation_config": {"temperature": 0.2, "max_output_tokens": 800},
+    }
+    request = urllib.request.Request(
+        "https://generativelanguage.googleapis.com/v1beta/interactions",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json", "x-goog-api-key": key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            data = json.loads(response.read().decode())
+        return _text_from_gemini(data)
+    except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError, TimeoutError):
+        return None
+
+
+def related_links(message):
+    text = " ".join(message.lower().split())
+    found = _series_reply(text) or _catalog(text) or _faq(text)
+    return list((found or {}).get("links") or [])
+
+
+def reply_to(message, guide_step, use_gemini=True):
     text = " ".join(message.lower().split())
     if any(phrase in text for phrase in ("show me around", "tour", "guide me", "how does this work", "get started", "walk me")):
         return {**GUIDE[0], "guide_step": 1}
@@ -270,7 +363,15 @@ def reply_to(message, guide_step):
             "guide_step": 0,
         }
 
+    spoken = _gemini_reply(message) if use_gemini else None
     found = _small_talk(text) or _stored_faq(text) or _faq(text) or _series_reply(text) or _catalog(text)
+    if spoken:
+        return {
+            "text": spoken,
+            "links": (found or {}).get("links", []),
+            "faq_id": (found or {}).get("faq_id"),
+            "guide_step": guide_step,
+        }
     if found:
         found["guide_step"] = guide_step
         return found
@@ -278,7 +379,7 @@ def reply_to(message, guide_step):
         "text": "I can pull a title, walk the eight shelves, explain sign-in, bookmarks, fan pieces, news, or the Los Angeles headquarters. Name a series, or say show me around.",
         "links": [
             {"label": "Explore", "href": "/explore"},
-            {"label": "News", "href": "/news"},
+            {"label": "Featured", "href": "/featured"},
             {"label": "Events", "href": "/events"},
         ],
         "guide_step": guide_step,

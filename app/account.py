@@ -1,22 +1,27 @@
+import html
 import os
 import re
 import secrets
+from html.parser import HTMLParser
 from datetime import date, datetime, timedelta, timezone
 
 from flask import (
     Blueprint,
     current_app,
+    flash,
     redirect,
     render_template,
     request,
     session,
     url_for,
 )
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from .config import settings
-from .emailer import send_reset_email, send_verify_email
+from .paging import page_of
+from .security import like_contains, utcnow
+from .emailer import send_reset_otp_email, send_verify_email
 from .extensions import db
 from .models import (
     ActivityLog,
@@ -50,6 +55,10 @@ from .security import hash_password, hash_token, new_raw_token, utcnow, verify_p
 bp = Blueprint("account", __name__)
 
 
+def _toast(message):
+    flash(message, "ok")
+
+
 def _safe_next(value, fallback):
     nxt = (value or "").strip()
     if not nxt.startswith("/") or nxt.startswith("//") or "\\" in nxt:
@@ -64,6 +73,16 @@ def current_user():
     user = db.session.get(User, user_id)
     if user is None or not user.is_active:
         session.pop("user_id", None)
+        session.pop("session_version", None)
+        return None
+    held = session.get("session_version")
+    live = int(user.session_version or 1)
+    if held is None:
+        session["session_version"] = live
+    elif int(held) != live:
+        session.pop("user_id", None)
+        session.pop("session_version", None)
+        session["notice"] = "Someone else signed in to this account, so this session was signed out."
         return None
     user.last_login_at = utcnow()
     db.session.commit()
@@ -84,6 +103,21 @@ def _strong(password):
     )
 
 
+def _valid_email(value):
+    if not value or len(value) > 255:
+        return False
+    return re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", value) is not None
+
+
+def _begin_session(user):
+    user.session_version = (user.session_version or 1) + 1
+    user.last_login_at = utcnow()
+    db.session.commit()
+    session["user_id"] = user.user_id
+    session["session_version"] = int(user.session_version)
+    session.pop("notice", None)
+
+
 def _issue(user, purpose, hours, raw=None):
     mapped = "email_verify" if purpose == "verify" else "password_reset"
     UserToken.query.filter_by(user_id=user.user_id, purpose=mapped, used_at=None).update(
@@ -99,6 +133,10 @@ def _issue(user, purpose, hours, raw=None):
     db.session.add(token)
     db.session.commit()
     return raw
+
+
+def _otp():
+    return f"{secrets.randbelow(1_000_000):06d}"
 
 
 def _take(token_value, purpose):
@@ -121,8 +159,8 @@ def register():
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         confirm = request.form.get("confirm", "")
-        if not name or "@" not in email:
-            error = "Enter your name and a real email."
+        if not name or not _valid_email(email):
+            error = "Enter your name and a valid email address."
         elif password != confirm:
             error = "The two passwords do not match."
         elif not _strong(password):
@@ -143,11 +181,13 @@ def register():
                 send_verify_email(user.email, token)
             except Exception:
                 current_app.logger.exception("verification email failed")
-            session["pending_email"] = user.email
-            target = {"purpose": "verify"}
-            if settings.email_backend != "smtp":
-                target["token"] = token
-            return redirect(url_for("account.sent", **target))
+                UserToken.query.filter_by(user_id=user.user_id).delete()
+                db.session.delete(user)
+                db.session.commit()
+                error = "The confirmation email could not be sent. Try again in a moment."
+            else:
+                _toast("Check your email to confirm the account.")
+                return redirect(url_for("account.login", sent="verify"))
     return render_template(
         "auth/register.html",
         error=error,
@@ -161,27 +201,32 @@ def register():
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     error = None
+    email = ""
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
-        user = User.query.filter_by(email=email).first()
-        if user is None or not verify_password(password, user.password_hash):
+        user = User.query.filter_by(email=email).first() if _valid_email(email) else None
+        if not _valid_email(email):
+            error = "Enter a valid email address."
+        elif user is None or not verify_password(password, user.password_hash):
             error = "Email or password is not right."
         elif user.locked:
             error = "This account is locked."
         elif user.role == "admin":
-            session["user_id"] = user.user_id
-            return redirect(url_for("account.admin_home"))
+            _begin_session(user)
+            _toast("Signed in.")
+            return redirect(url_for("account.admin_home", tab="dashboard"))
         elif user.role != "user":
             error = "Email or password is not right."
         elif not user.verified:
-            error = "Verify your email before signing in."
+            error = "Your email is not verified yet. Use the Confirm email button in the message we sent."
             session["pending_email"] = user.email
         else:
-            session["user_id"] = user.user_id
+            _begin_session(user)
+            _toast("Signed in.")
             nxt = _safe_next(request.form.get("next") or request.args.get("next"), url_for("main.home"))
             return redirect(nxt)
-    return render_template("auth/login.html", error=error)
+    return render_template("auth/login.html", error=error, email=email)
 
 
 @bp.route("/resend", methods=["POST"])
@@ -194,16 +239,15 @@ def resend():
             send_verify_email(user.email, token)
         except Exception:
             current_app.logger.exception("verification email failed")
-        target = {"purpose": "verify"}
-        if settings.email_backend != "smtp":
-            target["token"] = token
-        return redirect(url_for("account.sent", **target))
-    return redirect(url_for("account.sent", purpose="verify"))
+        return redirect(url_for("account.login", sent="verify"))
+    return redirect(url_for("account.login"))
 
 
 @bp.route("/logout", methods=["POST"])
 def logout():
+    _toast("Signed out.")
     session.pop("user_id", None)
+    session.pop("session_version", None)
     return redirect(url_for("main.home"))
 
 
@@ -213,22 +257,71 @@ def forgot():
     email = ""
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
-        if "@" not in email:
-            error = "Enter the email on the account."
+        if not _valid_email(email):
+            error = "Enter a valid email address."
         else:
             user = User.query.filter_by(email=email).first()
-            token = ""
+            session["reset_email"] = email
+            session.pop("reset_ready", None)
             if user and not user.locked:
-                token = _issue(user, "reset", settings.password_reset_minutes / 60)
+                code = _issue(user, "reset", settings.password_reset_minutes / 60, raw=_otp())
                 try:
-                    send_reset_email(user.email, token)
+                    send_reset_otp_email(user.email, code)
                 except Exception:
                     current_app.logger.exception("reset email failed")
-            target = {"purpose": "reset"}
-            if token and settings.email_backend != "smtp":
-                target["token"] = token
-            return redirect(url_for("account.sent", **target))
+                    error = "The reset email could not be sent. Try again in a moment."
+            if error is None:
+                _toast("Reset code sent.")
+                return redirect(url_for("account.reset_code"))
     return render_template("auth/forgot.html", error=error, email=email)
+
+
+@bp.route("/reset-code", methods=["GET", "POST"])
+def reset_code():
+    email = (session.get("reset_email") or "").strip().lower()
+    if not _valid_email(email):
+        return redirect(url_for("account.forgot"))
+    error = None
+    code = ""
+    if request.method == "POST":
+        code = request.form.get("code", "").strip()
+        user = User.query.filter_by(email=email).first()
+        row = _take(code, "reset") if user and re.fullmatch(r"\d{6}", code) else None
+        if row is None or row.user_id != user.user_id:
+            error = "That code is not valid, or it has expired."
+        else:
+            session["reset_ready"] = code
+            return redirect(url_for("account.reset_password"))
+    return render_template("auth/reset_code.html", error=error, email=email, code=code)
+
+
+@bp.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    email = (session.get("reset_email") or "").strip().lower()
+    code = session.get("reset_ready") or ""
+    user = User.query.filter_by(email=email).first() if _valid_email(email) else None
+    row = _take(code, "reset") if user and re.fullmatch(r"\d{6}", code or "") else None
+    if row is None or row.user_id != user.user_id:
+        session.pop("reset_ready", None)
+        return redirect(url_for("account.reset_code"))
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+        if password != confirm:
+            error = "The two passwords do not match."
+        elif not _strong(password):
+            error = "Use at least 8 characters, with a letter and a number."
+        else:
+            row.user.password_hash = hash_password(password)
+            row.used_at = utcnow()
+            row.user.session_version = (row.user.session_version or 1) + 1
+            db.session.commit()
+            session.pop("reset_email", None)
+            session.pop("reset_ready", None)
+            _toast("Password updated. Sign in with the new one.")
+            return redirect(url_for("account.login"))
+    return render_template("auth/reset.html", error=error)
 
 
 @bp.route("/sent")
@@ -250,8 +343,9 @@ def verify(token):
         return render_template("auth/sent.html", purpose="expired", link=None)
     row.used_at = utcnow()
     row.user.verified = True
+    address = row.user.email
     db.session.commit()
-    return redirect(url_for("account.login", next="/profile"))
+    return render_template("auth/verified.html", email=address)
 
 
 @bp.route("/reset/<token>", methods=["GET", "POST"])
@@ -288,6 +382,12 @@ def _admin():
     if user is None or user.role != "admin":
         return None
     return user
+
+
+def _admin_entry():
+    if current_user() is not None:
+        return redirect(url_for("main.home"))
+    return redirect(url_for("account.login", next="/admin"))
 
 
 def _log_activity(user, kind, summary, href=""):
@@ -348,6 +448,10 @@ def dashboard():
     if user is None:
         return redirect(url_for("account.login", next=request.path))
     kind = request.args.get("kind", "").strip()
+    if kind == "merchandise":
+        kept = request.args.to_dict(flat=True)
+        kept["kind"] = "merch"
+        return redirect(url_for("account.dashboard", **kept))
     bookmarks = (
         Bookmark.query.filter_by(user_id=user.user_id)
         .order_by(Bookmark.created_at.desc())
@@ -355,7 +459,7 @@ def dashboard():
     )
     if kind == "character":
         bookmarks = [row for row in bookmarks if row.character_id]
-    elif kind == "merchandise":
+    elif kind == "merch":
         bookmarks = [row for row in bookmarks if row.merchandise_id]
     elif kind:
         bookmarks = [row for row in bookmarks if row.content and row.content.content_type == kind]
@@ -370,7 +474,7 @@ def dashboard():
         picks = (
             Content.query.filter(
                 Content.status == "published",
-                Content.title.ilike(f"%{user.favorite}%"),
+                Content.title.ilike(like_contains(user.favorite)),
             )
             .order_by(Content.popularity_score.desc())
             .limit(4)
@@ -385,21 +489,79 @@ def dashboard():
             .limit(4)
             .all()
         )
-    submissions = (
-        FanSubmission.query.filter_by(user_id=user.user_id)
-        .order_by(FanSubmission.submission_id.desc())
-        .all()
-    )
+    bookmarks, page, pages, _ = page_of(bookmarks, 8)
+    sent_count = FanSubmission.query.filter_by(user_id=user.user_id).count()
     return render_template(
         "auth/dashboard.html",
         user=user,
         bookmarks=bookmarks,
+        page=page,
+        pages=pages,
         activity=activity,
         picks=picks,
-        submissions=submissions,
+        sent_count=sent_count,
         kind=kind,
         categories=Category.query.order_by(Category.category_id).all(),
     )
+
+
+@bp.route("/my-pieces")
+def sent_pieces():
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next=request.path))
+    state = request.args.get("state", "all")
+    if state not in {"all", "pending", "rejected", "approved"}:
+        state = "all"
+    q = " ".join(request.args.get("q", "").split())[:80]
+    query = FanSubmission.query.filter_by(user_id=user.user_id)
+    if state != "all":
+        query = query.filter(FanSubmission.status == state)
+    if q:
+        query = query.filter(FanSubmission.title.like(like_contains(q)))
+    rows, page, pages, total = page_of(
+        query.order_by(FanSubmission.submission_id.desc()).all(),
+        6,
+    )
+    return render_template(
+        "auth/sent_pieces.html",
+        user=user,
+        rows=rows,
+        page=page,
+        pages=pages,
+        total=total,
+        state=state,
+        q=q,
+    )
+
+
+@bp.route("/my-pieces/<int:submission_id>/delete", methods=["POST"])
+def delete_sent_piece(submission_id):
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next="/my-pieces"))
+    row = FanSubmission.query.filter_by(submission_id=submission_id, user_id=user.user_id).first()
+    if row is not None:
+        if row.published_content_id:
+            item = db.session.get(Content, row.published_content_id)
+            if item is not None:
+                item.status = "archived"
+        title = row.title
+        db.session.delete(row)
+        _log_activity(user, "submission", f"Removed “{title}”", "/my-pieces")
+        db.session.commit()
+        _toast("Piece removed.")
+    kept = {}
+    state = request.form.get("state", "all")
+    if state in {"pending", "rejected", "approved"}:
+        kept["state"] = state
+    q = " ".join(request.form.get("q", "").split())[:80]
+    if q:
+        kept["q"] = q
+    page = request.form.get("page", "")
+    if str(page).isdigit():
+        kept["page"] = page
+    return redirect(url_for("account.sent_pieces", **kept))
 
 
 @bp.route("/profile", methods=["GET", "POST"])
@@ -440,6 +602,7 @@ def profile():
         if error is None:
             _log_activity(user, "profile", "Updated profile and display preferences", "/profile")
             db.session.commit()
+            _toast("Profile saved.")
             return redirect(url_for("account.profile"))
         db.session.commit()
     return render_template(
@@ -504,6 +667,7 @@ def bookmark(slug):
     nxt = request.form.get("next") or url_for("main.content_detail", slug=slug)
     if not nxt.startswith("/"):
         nxt = url_for("account.dashboard")
+    _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
     return redirect(nxt)
 
 
@@ -527,6 +691,7 @@ def rate(slug):
     _log_activity(user, "rate", f"Rated {item.title} {score}/5", f"/explore/{item.slug}")
     refresh_content_popularity(db.session, item.content_id)
     db.session.commit()
+    _toast("Rating saved.")
     if back.startswith("/media/"):
         return redirect(back)
     return redirect(url_for("main.content_detail", slug=slug))
@@ -568,12 +733,14 @@ def bookmark_character(character_id):
         return redirect(url_for("account.login", next=f"/characters/{character_id}"))
     if db.session.get(CharacterProfile, character_id) is None:
         return redirect(url_for("main.characters"))
+    action = request.form.get("action", "save")
     _toggle_bookmark(
         user,
         character_id=character_id,
         note=request.form.get("note", ""),
-        action=request.form.get("action", "save"),
+        action=action,
     )
+    _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
     return redirect(url_for("main.character_detail", character_id=character_id))
 
 
@@ -581,15 +748,17 @@ def bookmark_character(character_id):
 def bookmark_merchandise(item_id):
     user = _member()
     if user is None:
-        return redirect(url_for("account.login", next=f"/merchandise/{item_id}"))
+        return redirect(url_for("account.login", next=f"/merch/{item_id}"))
     if db.session.get(MerchandiseItem, item_id) is None:
         return redirect(url_for("main.merchandise"))
+    action = request.form.get("action", "save")
     _toggle_bookmark(
         user,
         merchandise_id=item_id,
         note=request.form.get("note", ""),
-        action=request.form.get("action", "save"),
+        action=action,
     )
+    _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
     return redirect(url_for("main.merchandise_detail", item_id=item_id))
 
 
@@ -602,11 +771,127 @@ def bookmark_event(event_id):
         return redirect(url_for("account.login", next="/events"))
     if db.session.get(Event, event_id) is None:
         return redirect(url_for("main.events"))
-    _toggle_bookmark(user, event_id=event_id, action=request.form.get("action", "save"))
+    action = request.form.get("action", "save")
+    _toggle_bookmark(user, event_id=event_id, action=action)
+    _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
     return redirect(url_for("main.events") + f"#{event_id}")
 
 
+def _plain_text(value):
+    text = re.sub(r"<[^>]+>", " ", (value or "").replace("\x00", ""))
+    text = html.unescape(text).replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _clean_html(value):
+    allowed = {"p", "br", "strong", "b", "em", "i", "u", "ul", "ol", "li", "h2", "h3", "blockquote", "a"}
+
+    class Cleaner(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.parts = []
+            self.skip = 0
+            self.stack = []
+
+        def handle_starttag(self, tag, attrs):
+            tag = tag.lower()
+            if tag in {"script", "style"}:
+                self.skip += 1
+                return
+            if self.skip or tag not in allowed:
+                return
+            extra = ""
+            if tag == "a":
+                href = html.unescape(next((item[1] for item in attrs if item[0] == "href" and item[1]), "")).strip()
+                lowered = href.lower()
+                if lowered.startswith(("javascript:", "data:", "vbscript:")) or not href.startswith(("http://", "https://")):
+                    return
+                extra = f' href="{html.escape(href, quote=True)}" rel="noreferrer" target="_blank"'
+            self.stack.append(tag)
+            self.parts.append(f"<{tag}{extra}>")
+
+        def handle_endtag(self, tag):
+            tag = tag.lower()
+            if tag in {"script", "style"} and self.skip:
+                self.skip -= 1
+                return
+            if self.skip or tag not in allowed or tag == "br" or tag not in self.stack:
+                return
+            while self.stack:
+                opened = self.stack.pop()
+                self.parts.append(f"</{opened}>")
+                if opened == tag:
+                    break
+
+        def handle_data(self, data):
+            if not self.skip:
+                self.parts.append(html.escape(data))
+
+    cleaner = Cleaner()
+    cleaner.feed(value or "")
+    cleaner.close()
+    return "".join(cleaner.parts).strip()
+
+
+def _wait_phrase(ready_at):
+    seconds = max(int((ready_at - utcnow()).total_seconds()), 60)
+    hours, rem = divmod(seconds, 3600)
+    minutes = (rem + 59) // 60
+    if minutes == 60:
+        hours += 1
+        minutes = 0
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def _post_wait(user):
+    since = utcnow() - timedelta(hours=12)
+    rows = (
+        FanSubmission.query.filter(FanSubmission.user_id == user.user_id, FanSubmission.created_at >= since)
+        .order_by(FanSubmission.created_at.asc())
+        .all()
+    )
+    if len(rows) < 10:
+        return None
+    opened = _as_utc(rows[0].created_at)
+    if opened is None:
+        return "12h"
+    return _wait_phrase(opened + timedelta(hours=12))
+
+
+def _as_utc(stamp):
+    """Fan rows written by MySQL CURRENT_TIMESTAMP are local time on this machine."""
+    if stamp is None:
+        return None
+    if stamp.tzinfo is not None:
+        stamp = stamp.replace(tzinfo=None)
+    now = utcnow()
+    skew = datetime.now() - now
+    if skew > timedelta(minutes=30) and stamp - now > timedelta(minutes=1):
+        return stamp - skew
+    return stamp
+
+
+def _edit_wait(row):
+    # Only a saved edit starts the clock. A failed form leaves updated_at empty.
+    stamp = _as_utc(row.updated_at)
+    if stamp is None:
+        return None
+    ready = stamp + timedelta(minutes=5)
+    if utcnow() >= ready:
+        return None
+    return _wait_phrase(ready)
+
+
 @bp.route("/submissions", methods=["GET", "POST"])
+def submissions_legacy():
+    if request.method == "GET":
+        return redirect(url_for("account.submissions", **request.args.to_dict(flat=True)))
+    return submissions()
+
+
+@bp.route("/contribute", methods=["GET", "POST"])
 def submissions():
     user = _member()
     if user is None:
@@ -616,7 +901,15 @@ def submissions():
     fandoms = Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all()
     if request.method == "POST":
         title = request.form.get("title", "").strip()
-        body = request.form.get("body", "").strip()
+        body = _clean_html(request.form.get("body", "").strip())
+        summary = request.form.get("summary", "").strip()
+        genre = " ".join(request.form.get("genre", "").split())
+        year = request.form.get("release_year", "").strip()
+        tags = request.form.get("tags", "").strip()
+        timeline = request.form.get("timeline", "").strip()
+        cover = request.form.get("cover_image_url", "").strip()
+        source_name = request.form.get("source_name", "").strip()
+        source_url = request.form.get("source_url", "").strip()
         category_id = request.form.get("category_id", "")
         content_type = request.form.get("content_type", "article")
         media_url = request.form.get("media_url", "").strip()
@@ -628,8 +921,10 @@ def submissions():
             uploaded, upload_error = _save_media_file(request.files.get("media_file"), file_types[content_type])
         raw_fandom = request.form.get("fandom_id", "").strip()
         fan = db.session.get(Fandom, int(raw_fandom)) if raw_fandom.isdigit() else None
-        if not title or not body or category is None or fan is None:
-            error = "Title, category, fandom, and the story itself are required."
+        if not title or not summary or not genre or not _plain_text(body) or category is None or fan is None:
+            error = "Title, summary, category, fandom, genre, and the story itself are required."
+        elif not year.isdigit() or not 1900 <= int(year) <= 2100:
+            error = "Release year needs four digits, from 1900 to 2100."
         elif fan.category_id != category.category_id or not fan.is_active:
             error = "Choose an active fandom in that category."
         elif content_type not in {"article", "video", "audio", "image", "profile"}:
@@ -638,6 +933,10 @@ def submissions():
             error = upload_error
         elif media_url and not media_url.startswith(("http://", "https://")):
             error = "Media links need to start with http:// or https://."
+        elif cover and not cover.startswith(("http://", "https://")):
+            error = "The cover link needs to start with http:// or https://."
+        elif source_url and not source_url.startswith(("http://", "https://")):
+            error = "The source link needs to start with http:// or https://."
         elif not rights:
             error = "Confirm you have the right to share this before it can be queued."
         else:
@@ -645,46 +944,65 @@ def submissions():
             row = None
             if row_id.isdigit():
                 row = FanSubmission.query.filter_by(submission_id=int(row_id), user_id=user.user_id).first()
+            editing = False
             if row is None:
-                row = FanSubmission(user_id=user.user_id, category_id=category.category_id)
-                db.session.add(row)
+                wait = _post_wait(user)
+                if wait:
+                    error = f"You can send 10 pieces every 12 hours. Try again in {wait}."
+                else:
+                    row = FanSubmission(user_id=user.user_id, category_id=category.category_id)
+                    row.created_at = utcnow()
+                    db.session.add(row)
             elif row.status not in {"pending", "rejected"}:
                 error = "That piece is already published."
-            if error is None:
+            else:
+                editing = True
+                wait = _edit_wait(row)
+                if wait:
+                    error = f"You can edit a piece once every 5 minutes. Try again in {wait}."
+            if error is None and row is not None:
                 row.category_id = category.category_id
                 row.fandom_id = fan.fandom_id
                 row.title = title[:200]
+                row.summary = summary[:500]
+                row.genre = genre[:60]
+                row.tags = tags[:255]
+                row.release_year = int(year)
+                row.timeline_text = timeline or None
+                row.cover_image_url = cover[:500] or None
+                row.source_name = source_name[:150] or None
+                row.source_url = source_url[:500] or None
                 row.body = body
                 row.content_type = content_type if content_type != "profile" else "article"
                 row.media_url = (uploaded or media_url)[:300]
                 row.rights_ok = True
                 row.status = "pending"
                 row.reject_reason = ""
-                _log_activity(user, "submission", f"Sent “{row.title}” for review", "/dashboard")
+                if editing:
+                    row.updated_at = utcnow()
+                _log_activity(user, "submission", f"Sent “{row.title}” for review", "/my-pieces")
                 db.session.commit()
-                return redirect(url_for("account.dashboard"))
-    rejected = FanSubmission.query.filter_by(user_id=user.user_id, status="rejected")
+                _toast("Sent for review.")
+                return redirect(url_for("account.sent_pieces"))
     edit = None
+    raw_edit = request.args.get("edit", "")
     if request.args.get("new") != "1":
-        raw_edit = request.args.get("edit", "")
         if not str(raw_edit).isdigit() and request.method == "POST":
             raw_edit = request.form.get("submission_id", "")
         if str(raw_edit).isdigit():
-            edit = rejected.filter_by(submission_id=int(raw_edit)).first()
-            if edit is None:
-                edit = FanSubmission.query.filter_by(
-                    user_id=user.user_id, submission_id=int(raw_edit), status="pending"
-                ).first()
-        elif request.method == "GET":
-            edit = rejected.order_by(FanSubmission.submission_id.desc()).first()
+            edit = FanSubmission.query.filter_by(user_id=user.user_id, submission_id=int(raw_edit)).first()
+            if edit is not None and edit.status not in {"pending", "rejected"}:
+                edit = None
     return render_template(
         "auth/submissions.html",
         user=user,
         error=error,
         categories=categories,
         fandoms=fandoms,
-        mine=FanSubmission.query.filter_by(user_id=user.user_id).order_by(FanSubmission.submission_id.desc()).all(),
+        genres=Genre.query.order_by(Genre.name).all(),
         edit=edit,
+        edit_wait=_edit_wait(edit) if edit is not None else None,
+        post_wait=_post_wait(user),
     )
 
 
@@ -695,13 +1013,13 @@ def feedback():
     sent = request.args.get("sent") == "1"
     if request.method == "POST":
         kind = request.form.get("kind", "")
-        message = request.form.get("message", "").strip()
+        message = _clean_html(request.form.get("message", "").strip())
         email = request.form.get("email", "").strip().lower()
         page_url = request.form.get("page_url", "").strip()
         steps = request.form.get("steps", "").strip()
         if kind not in {"bug", "suggestion", "query"}:
             error = "Choose bug, suggestion, or question."
-        elif not message:
+        elif not _plain_text(message):
             error = "Write the feedback before sending it."
         elif user is None and "@" not in email:
             error = "Guests need an email so the desk can reply."
@@ -721,44 +1039,190 @@ def feedback():
             if user and user.is_member:
                 _log_activity(user, "feedback", f"Sent a {kind}", "/feedback")
             db.session.commit()
-            return redirect(url_for("account.feedback", sent=1))
+            _toast("Feedback sent.")
+            return redirect(url_for("account.feedback"))
     return render_template("auth/feedback.html", user=user, error=error, sent=sent)
 
 
 @bp.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    error = None
-    if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        user = User.query.filter_by(email=email).first()
-        if (
-            user is None
-            or user.role != "admin"
-            or user.locked
-            or not verify_password(password, user.password_hash)
-        ):
-            error = "Admin sign-in was refused."
-        else:
-            session["user_id"] = user.user_id
-            return redirect(url_for("account.admin_home"))
-    return render_template("auth/admin_login.html", error=error)
+    return _admin_entry()
+
+
+def _dash_range():
+    today = datetime.now(timezone.utc).date()
+    labels = {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "7": "Last 7 days",
+        "30": "Last 30 days",
+        "month": "This month",
+        "lastmonth": "Last month",
+    }
+    preset = request.args.get("preset", "").strip()
+    raw_from = request.args.get("from", "").strip()
+    raw_to = request.args.get("to", "").strip()
+    if preset not in labels and preset != "custom":
+        preset = "custom" if raw_from or raw_to else "7"
+    if preset == "today":
+        start_day = end_day = today
+    elif preset == "yesterday":
+        start_day = end_day = today - timedelta(days=1)
+    elif preset == "30":
+        start_day, end_day = today - timedelta(days=29), today
+    elif preset == "month":
+        start_day, end_day = today.replace(day=1), today
+    elif preset == "lastmonth":
+        end_day = today.replace(day=1) - timedelta(days=1)
+        start_day = end_day.replace(day=1)
+    elif preset == "custom":
+        start_day = today - timedelta(days=6)
+        end_day = today
+        try:
+            if raw_from:
+                start_day = date.fromisoformat(raw_from)
+        except ValueError:
+            start_day = today - timedelta(days=6)
+        try:
+            if raw_to:
+                end_day = date.fromisoformat(raw_to)
+        except ValueError:
+            end_day = today
+        if start_day > end_day:
+            start_day, end_day = end_day, start_day
+    else:
+        start_day, end_day = today - timedelta(days=6), today
+    start = datetime.combine(start_day, datetime.min.time(), tzinfo=timezone.utc)
+    end = datetime.combine(end_day + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    if preset == "custom":
+        label = f"{start_day.strftime('%b %d, %Y')} – {end_day.strftime('%b %d, %Y')}"
+    else:
+        label = labels.get(preset, "Last 7 days")
+    return start_day, end_day, start, end, preset, label
+
+
+def _usage_pulse(start, end):
+    def window(query, column):
+        return query.filter(column >= start, column < end)
+
+    def members():
+        return User.query.filter(User.role == "user")
+
+    def chats():
+        return window(ChatbotQuery.query.filter(ChatbotQuery.message != ""), ChatbotQuery.created_at)
+
+    chat_total = chats().count()
+    chat_matched = chats().filter(ChatbotQuery.matched_faq_id.isnot(None)).count()
+    rating_count = window(ContentRating.query, ContentRating.created_at).count()
+    rating_avg = (
+        db.session.query(func.avg(ContentRating.score))
+        .filter(ContentRating.created_at >= start, ContentRating.created_at < end)
+        .scalar()
+    )
+
+    def shelf(name, titles, views):
+        return {"name": name, "titles": int(titles or 0), "views": int(views or 0)}
+
+    categories = [
+        shelf(name, titles, views)
+        for name, titles, views in (
+            db.session.query(
+                Category.name,
+                func.count(Content.content_id),
+                func.coalesce(func.sum(Content.view_count), 0),
+            )
+            .outerjoin(Content, and_(Content.category_id == Category.category_id, Content.status == "published"))
+            .group_by(Category.category_id, Category.name)
+            .order_by(func.coalesce(func.sum(Content.view_count), 0).desc(), Category.name.asc())
+            .all()
+        )
+    ]
+    fandoms = [
+        shelf(name, titles, views)
+        for name, titles, views in (
+            db.session.query(
+                Fandom.name,
+                func.count(Content.content_id),
+                func.coalesce(func.sum(Content.view_count), 0),
+            )
+            .join(Content, and_(Content.fandom_id == Fandom.fandom_id, Content.status == "published"))
+            .group_by(Fandom.fandom_id, Fandom.name)
+            .order_by(func.coalesce(func.sum(Content.view_count), 0).desc(), Fandom.name.asc())
+            .limit(5)
+            .all()
+        )
+    ]
+    def marked(rows):
+        top = max([row["views"] for row in rows] + [1])
+        for row in rows:
+            row["share"] = round(100 * row["views"] / top) if row["views"] else 0
+        return rows
+
+    return {
+        "active": window(members().filter(User.last_login_at.isnot(None)), User.last_login_at).count(),
+        "members": members().count(),
+        "joined": window(members(), User.created_at).count(),
+        "verified": members().filter(User.email_verified_at.isnot(None)).count(),
+        "chat": chat_total,
+        "chat_matched": chat_matched,
+        "chat_missed": chat_total - chat_matched,
+        "chat_share": round(100 * chat_matched / chat_total) if chat_total else 0,
+        "bookmarks": window(Bookmark.query, Bookmark.created_at).count(),
+        "bookmark_titles": window(Bookmark.query.filter(Bookmark.content_id.isnot(None)), Bookmark.created_at).count(),
+        "bookmark_characters": window(Bookmark.query.filter(Bookmark.character_id.isnot(None)), Bookmark.created_at).count(),
+        "bookmark_merch": window(Bookmark.query.filter(Bookmark.merchandise_id.isnot(None)), Bookmark.created_at).count(),
+        "bookmark_events": window(Bookmark.query.filter(Bookmark.event_id.isnot(None)), Bookmark.created_at).count(),
+        "ratings": rating_count,
+        "rating_avg": round(float(rating_avg), 1) if rating_avg is not None else None,
+        "title_views": int(db.session.query(func.coalesce(func.sum(Content.view_count), 0)).scalar() or 0),
+        "merch_views": int(db.session.query(func.coalesce(func.sum(MerchandiseItem.view_count), 0)).scalar() or 0),
+        "character_views": int(db.session.query(func.coalesce(func.sum(CharacterProfile.view_count), 0)).scalar() or 0),
+        "titles": Content.query.filter_by(status="published").count(),
+        "hidden": Content.query.filter(Content.status != "published").count(),
+        "featured": Content.query.filter_by(status="published", is_featured=True).count(),
+        "fandoms": Fandom.query.filter_by(is_active=True).count(),
+        "characters": CharacterProfile.query.count(),
+        "merch": MerchandiseItem.query.count(),
+        "events": Event.query.count(),
+        "upcoming_events": Event.query.filter(Event.start_at >= utcnow()).count(),
+        "categories": marked(categories),
+        "fandoms_hot": marked(fandoms),
+        "titles_hot": (
+            Content.query.filter_by(status="published")
+            .order_by(Content.view_count.desc(), Content.popularity_score.desc(), Content.title.asc())
+            .limit(4)
+            .all()
+        ),
+        "merch_hot": MerchandiseItem.query.order_by(MerchandiseItem.view_count.desc(), MerchandiseItem.name.asc()).limit(4).all(),
+        "characters_hot": CharacterProfile.query.order_by(CharacterProfile.view_count.desc(), CharacterProfile.name.asc()).limit(4).all(),
+    }
 
 
 @bp.route("/admin")
 def admin_home():
     user = _admin()
     if user is None:
-        return redirect(url_for("account.admin_login"))
-    days = request.args.get("days", "30")
-    since = None
-    if days in {"7", "30"}:
-        since = datetime.now(timezone.utc) - timedelta(days=int(days))
+        return _admin_entry()
+    renamed = {
+        "health": "dashboard",
+        "content": "catalog",
+        "queue": "review",
+        "merchandise": "merch",
+        "faqs": "faq",
+        "users": "members",
+    }
+    raw_tab = request.args.get("tab")
+    if raw_tab in renamed:
+        kept = request.args.to_dict(flat=True)
+        kept["tab"] = renamed[raw_tab]
+        return redirect(url_for("account.admin_home", **kept))
+    range_from, range_to, since, until, range_preset, range_label = _dash_range()
+    days = "7"
     active_query = User.query.filter(User.role == "user", User.last_login_at.isnot(None))
     chat_query = ChatbotQuery.query
     if since is not None:
-        active_query = active_query.filter(User.last_login_at >= since)
-        chat_query = chat_query.filter(ChatbotQuery.created_at >= since)
+        active_query = active_query.filter(User.last_login_at >= since, User.last_login_at < until)
+        chat_query = chat_query.filter(ChatbotQuery.created_at >= since, ChatbotQuery.created_at < until)
     popular = (
         db.session.query(Category.name, func.count(Content.content_id))
         .join(Content, Content.category_id == Category.category_id)
@@ -769,28 +1233,28 @@ def admin_home():
     members = User.query.filter_by(role="user").order_by(User.name).all()
     q = request.args.get("q", "").strip()
     if q:
-        like = f"%{q}%"
+        like = like_contains(q)
         members = (
             User.query.filter(User.role == "user")
             .filter(or_(User.name.ilike(like), User.email.ilike(like)))
             .order_by(User.name)
             .all()
         )
-    tab = request.args.get("tab", "queue")
+    tab = request.args.get("tab", "dashboard")
     tabs = {
-        "queue", "feedback", "health", "content", "categories", "fandoms",
-        "characters", "merchandise", "events", "tags", "faqs", "users", "record",
+        "review", "feedback", "dashboard", "catalog", "categories", "fandoms",
+        "characters", "merch", "events", "tags", "faq", "members", "record",
     }
     if tab not in tabs:
-        tab = "queue"
-    catalog_q = request.args.get("q", "").strip() if tab == "content" else ""
-    catalog_category = request.args.get("category", "").strip() if tab == "content" else ""
-    catalog_type = request.args.get("type", "").strip() if tab == "content" else ""
-    catalog_state = request.args.get("state", "").strip() if tab == "content" else ""
-    catalog_featured = request.args.get("featured", "").strip() if tab == "content" else ""
+        tab = "dashboard"
+    catalog_q = request.args.get("q", "").strip() if tab == "catalog" else ""
+    catalog_category = request.args.get("category", "").strip() if tab == "catalog" else ""
+    catalog_type = request.args.get("type", "").strip() if tab == "catalog" else ""
+    catalog_state = request.args.get("state", "").strip() if tab == "catalog" else ""
+    catalog_featured = request.args.get("featured", "").strip() if tab == "catalog" else ""
     title_query = Content.query
     if catalog_q:
-        like = f"%{catalog_q}%"
+        like = like_contains(catalog_q)
         title_query = title_query.filter(or_(Content.title.ilike(like), Content.summary.ilike(like)))
     if catalog_category:
         title_query = title_query.join(Category, Category.category_id == Content.category_id).filter(Category.slug == catalog_category)
@@ -806,14 +1270,73 @@ def admin_home():
     catalog_pages = 1
     catalog_total = 0
     titles = []
-    if tab == "content":
+    if tab == "catalog":
         catalog_total = title_query.count()
         catalog_pages = max(1, (catalog_total + 7) // 8)
         raw_page = request.args.get("page", "1")
         catalog_page = int(raw_page) if raw_page.isdigit() and int(raw_page) > 0 else 1
         catalog_page = min(catalog_page, catalog_pages)
         titles = title_query.order_by(Content.title).offset((catalog_page - 1) * 8).limit(8).all()
-    needs_fandoms = tab in {"content", "fandoms", "characters", "merchandise", "events"}
+    needs_fandoms = tab in {"catalog", "fandoms", "characters", "merch", "events"}
+    fandom_rows = Fandom.query.order_by(Fandom.name).all() if needs_fandoms else []
+    character_rows = CharacterProfile.query.order_by(CharacterProfile.name).all() if tab == "characters" else []
+    merch_rows = MerchandiseItem.query.order_by(MerchandiseItem.name).all() if tab == "merch" else []
+    event_rows = Event.query.order_by(Event.start_at.desc()).all() if tab == "events" else []
+    tag_rows = Tag.query.order_by(Tag.name).all() if tab in {"tags", "merch"} else []
+    faq_rows = ChatbotFaq.query.order_by(ChatbotFaq.faq_id.desc()).all() if tab == "faq" else []
+    pending_rows = FanSubmission.query.filter_by(status="pending").order_by(FanSubmission.submission_id.asc()).all()
+    queue_total = len(pending_rows)
+    queue = pending_rows
+    review_state = "pending"
+    review_q = ""
+    if tab == "review":
+        review_state = request.args.get("state", "pending").strip()
+        if review_state not in {"pending", "approved", "rejected", "all"}:
+            review_state = "pending"
+        review_q = request.args.get("q", "").strip()
+        queue_query = FanSubmission.query
+        if review_state != "all":
+            queue_query = queue_query.filter(FanSubmission.status == review_state)
+        if review_q:
+            like = like_contains(review_q)
+            queue_query = queue_query.join(User, User.user_id == FanSubmission.user_id).filter(
+                or_(FanSubmission.title.ilike(like), User.name.ilike(like), User.email.ilike(like))
+            )
+        queue = queue_query.order_by(FanSubmission.submission_id.desc()).all()
+    feedback_rows = _feedback_rows()
+    logs = ActivityLog.query.filter_by(entity_type="admin").order_by(ActivityLog.log_id.desc()).limit(80).all()
+    desk_page, desk_pages = 1, 1
+    fandom_table = fandom_rows
+    if tab == "fandoms":
+        fandom_table, desk_page, desk_pages, _ = page_of(fandom_rows, 8)
+    elif tab == "characters":
+        character_rows, desk_page, desk_pages, _ = page_of(character_rows, 8)
+    elif tab == "merch":
+        merch_rows, desk_page, desk_pages, _ = page_of(merch_rows, 8)
+    elif tab == "events":
+        event_rows, desk_page, desk_pages, _ = page_of(event_rows, 8)
+    elif tab == "tags":
+        tag_rows, desk_page, desk_pages, _ = page_of(tag_rows, 8)
+    elif tab == "faq":
+        faq_rows, desk_page, desk_pages, _ = page_of(faq_rows, 8)
+    review_piece = None
+    review_player = None
+    review_src = None
+    review_timeline = []
+    if tab == "review":
+        raw_piece = request.args.get("piece", "").strip()
+        if raw_piece.isdigit():
+            review_piece = db.session.get(FanSubmission, int(raw_piece))
+            if review_piece is not None:
+                review_player, review_src = _review_media(review_piece)
+                review_timeline = _review_timeline(review_piece.timeline_text)
+        queue, desk_page, desk_pages, _ = page_of(queue, 6)
+    elif tab == "feedback":
+        feedback_rows, desk_page, desk_pages, _ = page_of(feedback_rows, 6)
+    elif tab == "members":
+        members, desk_page, desk_pages, _ = page_of(members, 8)
+    elif tab == "record":
+        logs, desk_page, desk_pages, _ = page_of(logs, 8)
     return render_template(
         "auth/admin.html",
         user=user,
@@ -832,16 +1355,17 @@ def admin_home():
         catalog_type=catalog_type,
         catalog_state=catalog_state,
         catalog_featured=catalog_featured,
-        fandom_rows=Fandom.query.order_by(Fandom.name).all() if needs_fandoms else [],
-        character_rows=CharacterProfile.query.order_by(CharacterProfile.name).all() if tab == "characters" else [],
-        merch_rows=MerchandiseItem.query.order_by(MerchandiseItem.name).all() if tab == "merchandise" else [],
-        merch_tag_map=_merch_tag_map() if tab == "merchandise" else {},
-        event_rows=Event.query.order_by(Event.start_at.desc()).all() if tab == "events" else [],
-        tag_rows=Tag.query.order_by(Tag.name).all() if tab in {"tags", "merchandise"} else [],
-        faq_rows=ChatbotFaq.query.order_by(ChatbotFaq.faq_id.desc()).all() if tab == "faqs" else [],
-        missed_questions=_missed_questions() if tab == "faqs" else [],
-        viewed_titles=Content.query.order_by(Content.view_count.desc()).limit(5).all() if tab == "health" else [],
-        viewed_merch=MerchandiseItem.query.order_by(MerchandiseItem.view_count.desc()).limit(5).all() if tab == "health" else [],
+        fandom_rows=fandom_rows,
+        fandom_table=fandom_table,
+        character_rows=character_rows,
+        merch_rows=merch_rows,
+        merch_tag_map=_merch_tag_map() if tab == "merch" else {},
+        event_rows=event_rows,
+        tag_rows=tag_rows,
+        faq_rows=faq_rows,
+        missed_questions=_missed_questions() if tab == "faq" else [],
+        viewed_titles=Content.query.order_by(Content.view_count.desc()).limit(5).all() if tab == "dashboard" else [],
+        viewed_merch=MerchandiseItem.query.order_by(MerchandiseItem.view_count.desc()).limit(5).all() if tab == "dashboard" else [],
         categories=Category.query.order_by(Category.category_id).all(),
         category_usage=_category_usage() if tab == "categories" else {},
         error=request.args.get("error", ""),
@@ -849,9 +1373,18 @@ def admin_home():
         draft_name=request.args.get("name", ""),
         draft_description=request.args.get("description", ""),
         members=members,
-        queue=FanSubmission.query.filter_by(status="pending").order_by(FanSubmission.submission_id.asc()).all(),
-        feedback_rows=_feedback_rows(),
-        logs=ActivityLog.query.filter_by(entity_type="admin").order_by(ActivityLog.log_id.desc()).limit(12).all(),
+        queue=queue,
+        review_state=review_state,
+        review_q=review_q,
+        review_piece=review_piece,
+        review_player=review_player,
+        review_src=review_src,
+        review_timeline=review_timeline,
+        queue_total=queue_total,
+        feedback_rows=feedback_rows,
+        logs=logs,
+        desk_page=desk_page,
+        desk_pages=desk_pages,
         submission_counts=dict(
             db.session.query(FanSubmission.user_id, func.count(FanSubmission.submission_id))
             .group_by(FanSubmission.user_id)
@@ -862,6 +1395,11 @@ def admin_home():
         states=request.args.get("status", ""),
         open_feedback=Feedback.query.filter(Feedback.status.in_(["new", "in_progress"])).count(),
         title_count=Content.query.count(),
+        pulse=_usage_pulse(since, until) if tab == "dashboard" else None,
+        range_from=range_from.isoformat(),
+        range_to=range_to.isoformat(),
+        range_preset=range_preset,
+        range_label=range_label,
     )
 
 
@@ -922,6 +1460,19 @@ def _apply_media(item, content_type, embed, uploaded):
     return None
 
 
+def _posted_embed():
+    """The catalog form posts one link field per media type. Keep the one that matches the type."""
+    values = [value.strip() for value in request.form.getlist("embed_url")]
+    kind = request.form.get("content_type", "article")
+    slot = {"image": 0, "video": 1, "trailer": 1, "explainer": 1, "audio": 2}.get(kind)
+    if slot is not None and slot < len(values) and values[slot]:
+        return values[slot]
+    for value in values:
+        if value:
+            return value
+    return ""
+
+
 def _content_from_form(item):
     title = request.form.get("title", "").strip()
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
@@ -929,10 +1480,12 @@ def _content_from_form(item):
     genre = request.form.get("genre", "").strip()
     year = request.form.get("release_year", "").strip()
     summary = request.form.get("summary", "").strip()
-    body = request.form.get("body", "").strip()
-    embed = request.form.get("embed_url", "").strip()
+    body = _clean_html(request.form.get("body", "").strip())
+    embed = _posted_embed()
     tags = request.form.get("tags", "").strip()
-    if not title or category is None or not genre or not summary or not body or not year.isdigit():
+    source_name = " ".join(request.form.get("source_name", "").split())[:150]
+    source_url = request.form.get("source_url", "").strip()
+    if not title or category is None or not genre or not summary or not _plain_text(body) or not year.isdigit():
         return "Title, category, genre, year, summary, and body are required."
     if content_type not in {"article", "video", "audio", "image", "trailer", "explainer"}:
         content_type = "article"
@@ -941,6 +1494,8 @@ def _content_from_form(item):
         return upload_error
     if embed and not embed.startswith(("http://", "https://")):
         return "Video and audio links need to start with http:// or https://."
+    if source_url and not source_url.startswith(("http://", "https://")):
+        return "The source link needs to start with http:// or https://."
     raw_fandom = request.form.get("fandom_id", "").strip()
     fan = db.session.get(Fandom, int(raw_fandom)) if raw_fandom.isdigit() else None
     if raw_fandom and (fan is None or fan.category_id != category.category_id or not fan.is_active):
@@ -958,6 +1513,8 @@ def _content_from_form(item):
     media_error = _apply_media(item, content_type, embed, uploaded)
     if media_error:
         return media_error
+    item.source_name = source_name or None
+    item.source_url = source_url[:500] or None
     item.featured = request.form.get("featured") == "yes"
     item.published = request.form.get("published") == "yes"
     score = request.form.get("popularity_score", "50")
@@ -977,12 +1534,52 @@ def _content_from_form(item):
     return None
 
 
-def _sync_timeline(item):
-    if "timeline" not in request.form:
-        return
+def _review_timeline(raw):
+    entries = []
+    for line in (raw or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [part.strip() for part in line.split("|")]
+        year = parts[0] if len(parts) > 1 else ""
+        title = parts[1] if len(parts) > 1 else parts[0]
+        description = parts[2] if len(parts) > 2 else ""
+        if title:
+            entries.append({
+                "year": year if year.isdigit() and len(year) == 4 else "",
+                "title": title,
+                "description": description,
+            })
+    return entries
+
+
+def _review_media(row):
+    url = (row.media_url or "").strip()
+    if not url or url.lower() == "none":
+        return None, None
+    lower = url.lower().split("?")[0]
+    if "youtu.be/" in url or "youtube.com" in url or "youtube-nocookie.com" in url:
+        src = url
+        if "watch?v=" in url:
+            src = url.replace("watch?v=", "embed/")
+        elif "youtu.be/" in url:
+            src = f"https://www.youtube.com/embed/{url.split('youtu.be/')[-1].split('?')[0]}"
+        elif "youtube.com/shorts/" in url:
+            src = f"https://www.youtube.com/embed/{url.split('shorts/')[-1].split('?')[0]}"
+        return "youtube", src
+    if lower.endswith((".mp3", ".wav", ".m4a", ".ogg")) or row.content_type == "audio":
+        return "audio", url
+    if lower.endswith((".mp4", ".webm")) or row.content_type == "video":
+        return "video", url
+    if row.content_type == "image":
+        return "image", url
+    return "link", url
+
+
+def _write_timeline(item, raw):
     ContentTimelineEntry.query.filter_by(content_id=item.content_id).delete()
     order = 0
-    for line in request.form.get("timeline", "").splitlines():
+    for line in (raw or "").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -1005,48 +1602,59 @@ def _sync_timeline(item):
         order += 1
 
 
+def _sync_timeline(item):
+    if "timeline" not in request.form:
+        return
+    _write_timeline(item, request.form.get("timeline", ""))
+
+
 @bp.route("/admin/content", methods=["POST"])
 def admin_content_create():
     user = _admin()
     if user is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     item = Content(slug="pending", category_id=1, title="pending", type="article", summary="", body="", release_date=date(2026, 1, 1))
     error = _content_from_form(item)
     if error:
-        return redirect(url_for("account.admin_home", tab="content", error=error))
+        return redirect(url_for("account.admin_home", tab="catalog", error=error))
     item.slug = _slugify(item.title)
     db.session.add(item)
     _admin_log(user, "content.create", item.title)
     db.session.commit()
-    return redirect(url_for("account.admin_home", tab="content"))
+    _toast("Title added.")
+    return redirect(url_for("account.admin_home", tab="catalog"))
 
 
 @bp.route("/admin/content/<int:item_id>", methods=["POST"])
 def admin_content_update(item_id):
     user = _admin()
     if user is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     item = db.session.get(Content, item_id)
     if item is None:
-        return redirect(url_for("account.admin_home"))
+        return redirect(url_for("account.admin_home", tab="catalog"))
     if request.form.get("action") == "hide":
         item.published = False
         _admin_log(user, "content.hide", item.title)
         db.session.commit()
-        return redirect(url_for("account.admin_home", tab="content"))
+        _toast("Title hidden.")
+        return redirect(url_for("account.admin_home", tab="catalog"))
     error = _content_from_form(item)
     if error:
         db.session.rollback()
-        return redirect(url_for("account.admin_home", tab="content", error=error, focus=item_id))
+        return redirect(url_for("account.admin_home", tab="catalog", error=error, focus=item_id))
     _admin_log(user, "content.edit", item.title)
     db.session.commit()
-    return redirect(url_for("account.admin_home", tab="content"))
+    _toast("Title saved.")
+    return redirect(url_for("account.admin_home", tab="catalog"))
 
 
-def _category_redirect(error=None, **extra):
+def _category_redirect(error=None, notice="Saved.", **extra):
     params = {"tab": "categories"}
     if error:
         params["error"] = error
+    elif notice:
+        _toast(notice)
     params.update({key: value for key, value in extra.items() if value})
     return redirect(url_for("account.admin_home", **params))
 
@@ -1095,15 +1703,16 @@ def _category_block(usage):
 
 def _validate_category(name, description, ignore_id=None):
     name = " ".join((name or "").split())
-    description = (description or "").strip()
+    cleaned, desc_error = _rich_text(description, 500, "Description")
+    if desc_error:
+        return desc_error
+    description = cleaned or ""
     if not name:
         return "Category name is required."
     if len(name) < 2 or len(name) > 50:
         return "Category name must be 2 to 50 characters."
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 &'./-]*", name) is None:
         return "Category name can use letters, numbers, spaces, and & ' . / -."
-    if len(description) > 500:
-        return "Description must be 500 characters or fewer."
     clash = Category.query.filter(func.lower(Category.name) == name.lower()).first()
     if clash is not None and clash.category_id != ignore_id:
         return "A category with that name already exists."
@@ -1128,17 +1737,18 @@ def _category_slug(name, ignore_id=None):
 def admin_category_create():
     user = _admin()
     if user is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     name = request.form.get("name", "")
     description = request.form.get("description", "")
     error = _validate_category(name, description)
     if error:
         return _category_redirect(error, name=name.strip(), description=description.strip())
     clean = " ".join(name.split())
+    stored, _ = _rich_text(description, 500, "Description")
     row = Category(
         name=clean,
         slug=_category_slug(clean),
-        description=description.strip() or None,
+        description=stored,
     )
     db.session.add(row)
     _admin_log(user, "category.create", clean)
@@ -1150,7 +1760,7 @@ def admin_category_create():
 def admin_category(category_id):
     user = _admin()
     if user is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     category = db.session.get(Category, category_id)
     if category is None:
         return _category_redirect("That category no longer exists.")
@@ -1160,7 +1770,8 @@ def admin_category(category_id):
     if error:
         return _category_redirect(error, focus=category_id, name=name.strip(), description=description.strip())
     category.name = " ".join(name.split())
-    category.description = description.strip() or None
+    stored, _ = _rich_text(description, 500, "Description")
+    category.description = stored
     _admin_log(user, "category.edit", category.name)
     db.session.commit()
     return _category_redirect()
@@ -1170,7 +1781,7 @@ def admin_category(category_id):
 def admin_category_delete(category_id):
     user = _admin()
     if user is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     category = db.session.get(Category, category_id)
     if category is None:
         return _category_redirect("That category no longer exists.")
@@ -1185,13 +1796,15 @@ def admin_category_delete(category_id):
     except IntegrityError:
         db.session.rollback()
         return _category_redirect("This category is still in use. Move or remove what belongs to it first.", focus=category_id)
-    return _category_redirect()
+    return _category_redirect(notice="Removed.")
 
 
-def _desk_redirect(tab, error=None, focus=None):
+def _desk_redirect(tab, error=None, focus=None, notice="Saved."):
     params = {"tab": tab}
     if error:
         params["error"] = error
+    elif notice:
+        _toast(notice)
     if focus is not None:
         params["focus"] = focus
     return redirect(url_for("account.admin_home", **params))
@@ -1200,7 +1813,7 @@ def _desk_redirect(tab, error=None, focus=None):
 def _require_admin():
     user = _admin()
     if user is None:
-        return None, redirect(url_for("account.admin_login"))
+        return None, _admin_entry()
     return user, None
 
 
@@ -1216,10 +1829,17 @@ def _clean_name(value, low, high, label):
 
 
 def _optional_text(value, limit, label):
-    text = (value or "").strip()
+    text = _plain_text(value or "")
     if len(text) > limit:
         return None, f"{label} must be {limit} characters or fewer."
     return text or None, None
+
+
+def _rich_text(value, limit, label):
+    cleaned = _clean_html(value or "")
+    if len(_plain_text(cleaned)) > limit:
+        return None, f"{label} must be {limit} characters or fewer."
+    return cleaned or None, None
 
 
 def _optional_url(value, label):
@@ -1295,7 +1915,7 @@ def admin_fandom_create():
     if bounce:
         return bounce
     name, error = _clean_name(request.form.get("name"), 2, 120, "Fandom name")
-    description, desc_error = _optional_text(request.form.get("description"), 500, "Description")
+    description, desc_error = _rich_text(request.form.get("description"), 500, "Description")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     if error or desc_error:
         return _desk_redirect("fandoms", error or desc_error)
@@ -1330,7 +1950,7 @@ def admin_fandom_update(fandom_id):
         db.session.commit()
         return _desk_redirect("fandoms")
     name, error = _clean_name(request.form.get("name"), 2, 120, "Fandom name")
-    description, desc_error = _optional_text(request.form.get("description"), 500, "Description")
+    description, desc_error = _rich_text(request.form.get("description"), 500, "Description")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     if error or desc_error:
         return _desk_redirect("fandoms", error or desc_error, fandom_id)
@@ -1359,12 +1979,12 @@ def admin_fandom_delete(fandom_id):
         row.is_active = False
         _admin_log(user, "fandom.hide", row.name)
         db.session.commit()
-        return _desk_redirect("fandoms", "This fandom still has titles, so it was hidden instead of deleted.")
+        return _desk_redirect("fandoms", "This fandom still has titles, so it was hidden instead of deleted.", fandom_id)
     name = row.name
     db.session.delete(row)
     _admin_log(user, "fandom.delete", name)
     db.session.commit()
-    return _desk_redirect("fandoms")
+    return _desk_redirect("fandoms", notice="Removed.")
 
 
 @bp.route("/admin/characters", methods=["POST"])
@@ -1374,7 +1994,7 @@ def admin_character_create():
         return bounce
     name, error = _clean_name(request.form.get("name"), 2, 150, "Character name")
     alias, alias_error = _optional_text(request.form.get("alias"), 150, "Alias")
-    bio, bio_error = _optional_text(request.form.get("bio"), 2000, "Bio")
+    bio, bio_error = _rich_text(request.form.get("bio"), 2000, "Bio")
     image, image_error = _optional_url(request.form.get("image_url"), "Image link")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     if any((error, alias_error, bio_error, image_error)):
@@ -1404,10 +2024,10 @@ def admin_character_update(character_id):
         db.session.delete(row)
         _admin_log(user, "character.delete", name)
         db.session.commit()
-        return _desk_redirect("characters")
+        return _desk_redirect("characters", notice="Removed.")
     name, error = _clean_name(request.form.get("name"), 2, 150, "Character name")
     alias, alias_error = _optional_text(request.form.get("alias"), 150, "Alias")
-    bio, bio_error = _optional_text(request.form.get("bio"), 2000, "Bio")
+    bio, bio_error = _rich_text(request.form.get("bio"), 2000, "Bio")
     image, image_error = _optional_url(request.form.get("image_url"), "Image link")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     if any((error, alias_error, bio_error, image_error)):
@@ -1443,18 +2063,18 @@ def admin_merch_create():
     if bounce:
         return bounce
     name, error = _clean_name(request.form.get("name"), 2, 200, "Merchandise name")
-    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
     image, image_error = _optional_url(request.form.get("image_url"), "Image link")
     reference, ref_error = _optional_url(request.form.get("reference_url"), "Reference link")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     release, release_error = _optional_date(request.form.get("release_date"))
     if any((error, desc_error, image_error, ref_error, release_error)):
-        return _desk_redirect("merchandise", error or desc_error or image_error or ref_error or release_error)
+        return _desk_redirect("merch", error or desc_error or image_error or ref_error or release_error)
     if category is None:
-        return _desk_redirect("merchandise", "Choose a category.")
+        return _desk_redirect("merch", "Choose a category.")
     fan, fan_error = _picked_fandom(category)
     if fan_error:
-        return _desk_redirect("merchandise", fan_error)
+        return _desk_redirect("merch", fan_error)
     row = MerchandiseItem(
         category_id=category.category_id,
         fandom_id=fan.fandom_id if fan else None,
@@ -1470,7 +2090,7 @@ def admin_merch_create():
     _merch_tags(row)
     _admin_log(user, "merch.create", name)
     db.session.commit()
-    return _desk_redirect("merchandise")
+    return _desk_redirect("merch")
 
 
 @bp.route("/admin/merchandise/<int:item_id>", methods=["POST"])
@@ -1480,26 +2100,26 @@ def admin_merch_update(item_id):
         return bounce
     row = db.session.get(MerchandiseItem, item_id)
     if row is None:
-        return _desk_redirect("merchandise", "That item no longer exists.")
+        return _desk_redirect("merch", "That item no longer exists.")
     if request.form.get("action") == "delete":
         name = row.name
         db.session.delete(row)
         _admin_log(user, "merch.delete", name)
         db.session.commit()
-        return _desk_redirect("merchandise")
+        return _desk_redirect("merch", notice="Removed.")
     name, error = _clean_name(request.form.get("name"), 2, 200, "Merchandise name")
-    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
     image, image_error = _optional_url(request.form.get("image_url"), "Image link")
     reference, ref_error = _optional_url(request.form.get("reference_url"), "Reference link")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     release, release_error = _optional_date(request.form.get("release_date"))
     if any((error, desc_error, image_error, ref_error, release_error)):
-        return _desk_redirect("merchandise", error or desc_error or image_error or ref_error or release_error, item_id)
+        return _desk_redirect("merch", error or desc_error or image_error or ref_error or release_error, item_id)
     if category is None:
-        return _desk_redirect("merchandise", "Choose a category.", item_id)
+        return _desk_redirect("merch", "Choose a category.", item_id)
     fan, fan_error = _picked_fandom(category)
     if fan_error:
-        return _desk_redirect("merchandise", fan_error, item_id)
+        return _desk_redirect("merch", fan_error, item_id)
     row.name = name
     row.description = description
     row.image_url = image
@@ -1511,7 +2131,7 @@ def admin_merch_update(item_id):
     _merch_tags(row)
     _admin_log(user, "merch.edit", name)
     db.session.commit()
-    return _desk_redirect("merchandise")
+    return _desk_redirect("merch")
 
 
 def _optional_date(value):
@@ -1566,7 +2186,7 @@ def admin_event_create():
     if bounce:
         return bounce
     title, error = _clean_name(request.form.get("title"), 2, 200, "Event title")
-    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
     city, city_error = _clean_name(request.form.get("city"), 2, 100, "City")
     start, start_error = _required_when(request.form.get("start_at"))
     end, end_error = _optional_when(request.form.get("end_at"))
@@ -1621,9 +2241,9 @@ def admin_event_update(event_id):
         db.session.delete(row)
         _admin_log(user, "event.delete", title)
         db.session.commit()
-        return _desk_redirect("events")
+        return _desk_redirect("events", notice="Removed.")
     title, error = _clean_name(request.form.get("title"), 2, 200, "Event title")
-    description, desc_error = _optional_text(request.form.get("description"), 2000, "Description")
+    description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
     city, city_error = _clean_name(request.form.get("city"), 2, 100, "City")
     start, start_error = _required_when(request.form.get("start_at"))
     end, end_error = _optional_when(request.form.get("end_at"))
@@ -1688,12 +2308,12 @@ def admin_tag_update(tag_id):
     if request.form.get("action") == "delete":
         used = MerchandiseTag.query.filter_by(tag_id=tag_id).first() or db.session.query(ContentTag).filter_by(tag_id=tag_id).first()
         if used:
-            return _desk_redirect("tags", "This tag is still on a title or merchandise item.")
+            return _desk_redirect("tags", "This tag is still on a title or merchandise item.", tag_id)
         name = row.name
         db.session.delete(row)
         _admin_log(user, "tag.delete", name)
         db.session.commit()
-        return _desk_redirect("tags")
+        return _desk_redirect("tags", notice="Removed.")
     name, error = _clean_name(request.form.get("name"), 2, 60, "Tag name")
     if error:
         return _desk_redirect("tags", error, tag_id)
@@ -1719,7 +2339,7 @@ def admin_faq_create():
     if not answer:
         a_error = a_error or "Answer is required."
     if q_error or a_error or k_error:
-        return _desk_redirect("faqs", q_error or a_error or k_error)
+        return _desk_redirect("faq", q_error or a_error or k_error)
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
     row = ChatbotFaq(
         category_id=category.category_id if category else None,
@@ -1732,7 +2352,7 @@ def admin_faq_create():
     db.session.add(row)
     _admin_log(user, "faq.create", question[:80])
     db.session.commit()
-    return _desk_redirect("faqs")
+    return _desk_redirect("faq")
 
 
 @bp.route("/admin/faqs/<int:faq_id>", methods=["POST"])
@@ -1742,12 +2362,12 @@ def admin_faq_update(faq_id):
         return bounce
     row = db.session.get(ChatbotFaq, faq_id)
     if row is None:
-        return _desk_redirect("faqs", "That FAQ no longer exists.")
+        return _desk_redirect("faq", "That FAQ no longer exists.")
     if request.form.get("action") == "delete":
         db.session.delete(row)
         _admin_log(user, "faq.delete", row.question[:80])
         db.session.commit()
-        return _desk_redirect("faqs")
+        return _desk_redirect("faq", notice="Removed.")
     question, q_error = _optional_text(request.form.get("question"), 500, "Question")
     answer, a_error = _optional_text(request.form.get("answer"), 2000, "Answer")
     keywords, k_error = _optional_text(request.form.get("keywords"), 500, "Keywords")
@@ -1756,7 +2376,7 @@ def admin_faq_update(faq_id):
     if not answer:
         a_error = a_error or "Answer is required."
     if q_error or a_error or k_error:
-        return _desk_redirect("faqs", q_error or a_error or k_error, faq_id)
+        return _desk_redirect("faq", q_error or a_error or k_error, faq_id)
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
     row.question = question
     row.answer = answer
@@ -1765,14 +2385,14 @@ def admin_faq_update(faq_id):
     row.is_active = request.form.get("active") == "yes"
     _admin_log(user, "faq.edit", question[:80])
     db.session.commit()
-    return _desk_redirect("faqs")
+    return _desk_redirect("faq")
 
 
 @bp.route("/admin/users/<int:user_id>", methods=["POST"])
 def admin_user(user_id):
     admin = _admin()
     if admin is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     member = db.session.get(User, user_id)
     if member is not None and member.role == "user":
         member.locked = request.form.get("locked") == "yes"
@@ -1780,33 +2400,56 @@ def admin_user(user_id):
             member.session_version = (member.session_version or 1) + 1
         _admin_log(admin, "user.lock" if member.locked else "user.unlock", member.email)
         db.session.commit()
-    return redirect(url_for("account.admin_home", tab="users"))
+    return redirect(url_for("account.admin_home", tab="members"))
 
 
 @bp.route("/admin/submissions/<int:submission_id>", methods=["POST"])
 def admin_submission(submission_id):
     admin = _admin()
     if admin is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     row = db.session.get(FanSubmission, submission_id)
     if row is None:
-        return redirect(url_for("account.admin_home", tab="queue"))
+        return redirect(url_for("account.admin_home", tab="review"))
     decision = request.form.get("decision")
     if decision == "approve":
+        allowed = {"article", "video", "audio", "image", "trailer", "explainer"}
+        kind = row.content_type if row.content_type in allowed else "article"
+        media = (row.media_url or "").strip() or None
+        cover = (row.cover_image_url or "").strip() or None
         item = Content(
             category_id=row.category_id,
+            fandom_id=row.fandom_id,
             title=row.title,
             slug=_slugify(row.title),
-            type=row.content_type if row.content_type in {"article", "video", "image"} else "article",
-            summary=(row.body or "")[:180],
+            type=kind,
+            summary=(row.summary or _plain_text(row.body))[:500],
             body=row.body,
-            embed_url=row.media_url,
+            embed_url=media if kind in {"video", "audio", "trailer", "explainer"} else None,
+            media_url=media if kind in {"video", "audio", "image", "trailer", "explainer"} else None,
+            thumbnail_url=cover or (media if kind == "image" else None),
+            source_name=(row.source_name or None),
+            source_url=(row.source_url or None),
             popularity_score=40,
             status="published",
             rights_confirmed=True,
+            created_by=row.user_id,
         )
-        item.release_year = datetime.now(timezone.utc).year
+        item.release_year = row.release_year or datetime.now(timezone.utc).year
         db.session.add(item)
+        db.session.flush()
+        if row.genre:
+            named = Genre.query.filter(func.lower(Genre.name) == row.genre.lower()).first()
+            if named is None:
+                named = Genre(name=row.genre[:60])
+                db.session.add(named)
+                db.session.flush()
+            db.session.add(ContentGenre(content_id=item.content_id, genre_id=named.genre_id))
+        if row.tags:
+            item.tags = row.tags
+        if row.timeline_text:
+            _write_timeline(item, row.timeline_text)
+        row.published_content_id = item.content_id
         row.status = "approved"
         row.reject_reason = ""
         db.session.add(
@@ -1817,6 +2460,7 @@ def admin_submission(submission_id):
             )
         )
         _admin_log(admin, "submission.approve", row.title)
+        _toast("Piece published.")
     elif decision == "reject":
         reason = request.form.get("reason", "").strip() or "Needs a revision."
         row.status = "rejected"
@@ -1829,21 +2473,23 @@ def admin_submission(submission_id):
             )
         )
         _admin_log(admin, "submission.reject", f"{row.title}: {row.reject_reason}")
+        _toast("Sent back for a revision.")
     db.session.commit()
-    return redirect(url_for("account.admin_home", tab="queue"))
+    return redirect(url_for("account.admin_home", tab="review", piece=row.submission_id))
 
 
 @bp.route("/admin/feedback/<int:feedback_id>", methods=["POST"])
 def admin_feedback(feedback_id):
     admin = _admin()
     if admin is None:
-        return redirect(url_for("account.admin_login"))
+        return _admin_entry()
     row = db.session.get(Feedback, feedback_id)
     if row is None:
         return redirect(url_for("account.admin_home", tab="feedback"))
     if request.form.get("action") == "delete":
         _admin_log(admin, "feedback.delete", row.email)
         db.session.delete(row)
+        _toast("Feedback removed.")
     else:
         status = request.form.get("status", row.status)
         status = {"reviewing": "in_progress", "done": "resolved"}.get(status, status)
@@ -1851,5 +2497,6 @@ def admin_feedback(feedback_id):
             row.status = status
         row.admin_note = request.form.get("admin_note", "").strip()[:300]
         _admin_log(admin, "feedback.update", f"{row.kind} → {row.status}")
+        _toast("Feedback updated.")
     db.session.commit()
     return redirect(url_for("account.admin_home", tab="feedback"))

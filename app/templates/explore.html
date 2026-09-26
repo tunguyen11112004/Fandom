@@ -3,17 +3,13 @@
 {% block body_class %}stack-{{ filters.category or 'all' }}{% endblock %}
 {% block content %}
   <header class="page-head">
+    {% if category_name %}
     <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('main.home') }}">Home</a>
+      <a href="{{ url_for('main.explore') }}">Explore</a>
       <span aria-hidden="true">/</span>
-      {% if category_name %}
-        <a href="{{ url_for('main.explore') }}">Explore</a>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{{ category_name }}</span>
-      {% else %}
-        <span aria-current="page">Explore</span>
-      {% endif %}
+      <span aria-current="page">{{ category_name }}</span>
     </nav>
+    {% endif %}
     <h1>{% if category_name %}{{ category_name }}{% else %}The stacks{% endif %}</h1>
     <p>
       {{ total_items }}
@@ -46,11 +42,15 @@
   {% endif %}
 
   <section class="filter-stage" id="filters">
-    <header class="filter-lead">
-      <h2>{% if category_name %}Search {{ category_name }}{% else %}Search the shelves{% endif %}</h2>
-      <p>{% if can_filter %}Title, category, fandom, genre, year, type, popularity, and featured. Sort by newest, most loved, or A to Z.{% else %}Guests can search by keyword, category, and type. Sign in for genre, year, fandom, popularity, featured, and extra sorts.{% endif %}</p>
+  <form class="filters studio-filter" method="get" action="{{ url_for('main.explore') }}">
+    <header class="studio-filter-head">
+      <div>
+        <p class="kicker">Filter matrix</p>
+        <h2>{% if category_name %}Search {{ category_name }}{% else %}Search the shelves{% endif %}</h2>
+        <p>Category, fandom, genre, year, format, popularity, and sort.</p>
+      </div>
+      <p class="studio-count">Showing {{ total_items }}</p>
     </header>
-  <form class="filters" method="get" action="{{ url_for('main.explore') }}">
     <div class="filter-search">
       <label for="q">Search</label>
       <input id="q" name="q" type="search" value="{{ filters.q }}" placeholder="Title, genre, or summary" />
@@ -94,7 +94,7 @@
       </select>
     </div>
     <div>
-      <label for="type">Content type</label>
+      <label for="type">Format</label>
       <select id="type" name="type">
         <option value="">All types</option>
         {% for type_name in content_types %}
@@ -114,7 +114,7 @@
       </select>
     </div>
     <div>
-      <label for="featured">Featured</label>
+      <label for="featured">Status</label>
       <select id="featured" name="featured" {% if not can_filter %}disabled{% endif %}>
         <option value="">Featured or not</option>
         <option value="yes" {% if filters.featured == "yes" %}selected{% endif %}>Featured only</option>
@@ -128,22 +128,27 @@
         {% endfor %}
       </select>
     </div>
-    <div class="filter-actions">
-      <button type="submit">Apply</button>
-      <a href="{{ url_for('main.explore') }}">Clear</a>
-      {% if not can_filter %}
-        <a href="{{ url_for('account.login', next=request.full_path) }}">Sign in for advanced filters</a>
+    <div class="studio-filter-foot">
+      {% if chips %}
+      <ul class="chip-row" aria-label="Active filters">
+        <li class="chip-label">Active</li>
+        {% for chip in chips %}
+          <li><a href="{{ chip.href }}">{{ chip.label }} ×</a></li>
+        {% endfor %}
+        <li><a href="{{ url_for('main.explore') }}">Clear all</a></li>
+      </ul>
+      {% else %}
+      <span></span>
       {% endif %}
+      <div class="filter-actions">
+        <a href="{{ url_for('main.explore') }}">Clear</a>
+        <button type="submit">Apply ({{ total_items }} result{{ '' if total_items == 1 else 's' }})</button>
+        {% if not can_filter %}
+          <a href="{{ url_for('account.login', next=request.full_path) }}">Sign in for advanced filters</a>
+        {% endif %}
+      </div>
     </div>
   </form>
-  {% if chips %}
-    <ul class="chip-row" aria-label="Active filters">
-      {% for chip in chips %}
-        <li><a href="{{ chip.href }}">{{ chip.label }} ×</a></li>
-      {% endfor %}
-      <li><a href="{{ url_for('main.explore') }}">Clear all</a></li>
-    </ul>
-  {% endif %}
   </section>
 
   {% if items %}
@@ -151,7 +156,9 @@
       {% for item in items %}
         <li>
           <a class="content-card" href="{{ url_for('main.content_detail', slug=item.slug) }}">
-            {% if item.image_path %}
+            {% if item.poster_url %}
+              <img src="{{ item.poster_url }}" alt="" />
+            {% elif item.image_path %}
               <img src="{{ url_for('static', filename='images/catalog/' + item.image_path) }}" alt="" />
             {% endif %}
             <div class="card-copy">
@@ -182,9 +189,15 @@
       {% endfor %}
     </ul>
     {% if pages > 1 %}
-      <nav class="crumbs" aria-label="Pages">
+      <nav class="pager" aria-label="Pages">
         {% if page > 1 %}<a href="{{ url_for('main.explore', page=page-1, q=filters.q, category=filters.category, fandom=filters.fandom, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, featured=filters.featured, sort=sort) }}">Previous</a>{% endif %}
-        <span>Page {{ page }} of {{ pages }}</span>
+        {% for n in range(1, pages + 1) %}
+          {% if n == page %}
+            <span aria-current="page">{{ n }}</span>
+          {% else %}
+            <a href="{{ url_for('main.explore', page=n, q=filters.q, category=filters.category, fandom=filters.fandom, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, featured=filters.featured, sort=sort) }}">{{ n }}</a>
+          {% endif %}
+        {% endfor %}
         {% if page < pages %}<a href="{{ url_for('main.explore', page=page+1, q=filters.q, category=filters.category, fandom=filters.fandom, genre=filters.genre, year=filters.year, type=filters.type, popularity=filters.popularity, featured=filters.featured, sort=sort) }}">Next</a>{% endif %}
       </nav>
     {% endif %}

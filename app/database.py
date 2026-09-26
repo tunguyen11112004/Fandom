@@ -1,3 +1,5 @@
+import re
+
 from flask import has_app_context
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
@@ -17,6 +19,14 @@ _COLUMN_EXTRAS = {
         "media_url": "VARCHAR(500) NULL",
         "source_url": "VARCHAR(500) NULL",
         "rights_confirmed": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "cover_image_url": "VARCHAR(500) NULL",
+        "summary": "VARCHAR(500) NULL",
+        "genre": "VARCHAR(60) NULL",
+        "tags": "VARCHAR(255) NULL",
+        "release_year": "INT NULL",
+        "timeline_text": "TEXT NULL",
+        "source_name": "VARCHAR(150) NULL",
+        "updated_at": "DATETIME NULL",
     },
     "feedbacks": {
         "page_url": "VARCHAR(500) NULL",
@@ -90,8 +100,10 @@ def ensure_mysql_schema() -> None:
             }
             if not existing:
                 continue
+            if not re.fullmatch(r"[a-z_]+", table):
+                continue
             for name, ddl in columns.items():
-                if name not in existing:
+                if name not in existing and re.fullmatch(r"[a-z_]+", name) and re.fullmatch(r"[A-Za-z0-9_ ()',]+", ddl):
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 

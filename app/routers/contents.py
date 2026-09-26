@@ -21,6 +21,7 @@ from app.models import (
 )
 from app.popularity import refresh_content_popularity
 from app.schemas_extra import ContentIn, RatingIn
+from app.security import like_contains
 from app.serialize import arg_int, breadcrumbs, log_activity, page_args, paginate, rating_summary, row_dict, slugify
 
 bp = Blueprint("contents", __name__)
@@ -131,7 +132,7 @@ def list_contents():
         raise AuthError(401, "login_required", "Advanced filters are for members. Sign in to continue.")
     q = _public_q(db)
     if qtext:
-        like = f"%{qtext}%"
+        like = like_contains(qtext)
         q = q.filter(or_(Content.title.ilike(like), Content.description.ilike(like), Content.summary.ilike(like)))
     if cat:
         q = q.filter(Content.category_id == cat)

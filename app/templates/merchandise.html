@@ -1,18 +1,20 @@
 {% extends "base.html" %}
+{% from "_pager.html" import pager %}
 {% block title %}Merchandise · Fan Hub Plus{% endblock %}
 {% block body_class %}case-room{% endblock %}
 {% block content %}
   <section class="case">
     <header class="case-head">
-      <nav class="crumbs" aria-label="Breadcrumb">
-        <a href="{{ url_for('main.home') }}">Home</a>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Merchandise</span>
-      </nav>
       <h1>Display case</h1>
       <p>Showcase only. No cart and no checkout. Tags such as Limited Edition come from the admin list.</p>
     </header>
-    <form class="case-bar" method="get">
+    <form class="filters studio-filter" method="get">
+      <header class="studio-filter-head">
+        <div>
+          <p class="kicker">Display case</p>
+          <h2>Narrow the shelf</h2>
+        </div>
+      </header>
       <div>
         <label for="category">Category</label>
         <select id="category" name="category">
@@ -47,10 +49,13 @@
           <option value="yes" {% if upcoming %}selected{% endif %}>Upcoming only</option>
         </select>
       </div>
-      <div class="filter-actions">
-        <button type="submit">Show</button>
-        <a href="{{ url_for('main.merchandise') }}">Clear</a>
-        <a href="{{ url_for('main.upcoming') }}">Upcoming</a>
+      <div class="studio-filter-foot">
+        <span></span>
+        <div class="filter-actions">
+          <a href="{{ url_for('main.merchandise') }}">Clear</a>
+          <a href="{{ url_for('main.upcoming') }}">Upcoming</a>
+          <button type="submit">Show</button>
+        </div>
       </div>
     </form>
     {% if cards %}
@@ -64,7 +69,7 @@
               <div class="card-copy">
                 <span class="type">{% if card.row.is_upcoming %}Upcoming{% else %}Merch{% endif %}</span>
                 <h2>{{ card.row.name }}</h2>
-                <p>{{ card.row.description }}</p>
+                <p>{{ card.row.description|striptags }}</p>
                 <dl>
                   <div>
                     <dt>Category</dt>
@@ -91,5 +96,6 @@
     {% else %}
       <p class="empty">No merchandise in this case yet.</p>
     {% endif %}
+    {{ pager(page, pages, 'main.merchandise', list_query) }}
   </section>
 {% endblock %}

@@ -1,10 +1,13 @@
+import json
 import uuid
 from datetime import date, datetime, timedelta
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, session, stream_with_context, url_for
 from sqlalchemy import and_, func, or_
 
 from .account import current_user
+from .paging import page_of
+from .security import like_contains
 from .events import haversine_km
 from .extensions import db
 from .models import (
@@ -28,7 +31,8 @@ from .news import featured_worlds, news_items
 from .popularity import refresh_content_popularity
 from .serialize import rating_summary
 from .series import hottest
-from .support import reply_to
+from .ai.service import fandom_chat
+from .support import related_links, reply_to
 
 bp = Blueprint("main", __name__)
 
@@ -57,7 +61,7 @@ def _apply_filters(query, args):
 
     query = query.filter(Content.status == "published")
     if q:
-        like = f"%{q}%"
+        like = like_contains(q)
         query = query.filter(
             or_(
                 Content.title.ilike(like),
@@ -301,9 +305,10 @@ def media_center(slug=None):
         .order_by(Content.release_date.desc(), Content.title.asc())
         .all()
     )
+    shelf_rows, page, pages, _ = page_of(rows, 12)
     groups = []
     for kind in kinds:
-        shelf = [row for row in rows if row.type == kind]
+        shelf = [row for row in shelf_rows if row.type == kind]
         if shelf:
             groups.append({"kind": kind, "label": labels[kind], "items": shelf})
     now = None
@@ -341,6 +346,8 @@ def media_center(slug=None):
         media_src=media_src,
         my_score=my_score,
         rating=rating_summary(db.session, now.content_id) if now is not None else None,
+        page=page,
+        pages=pages,
     )
 
 
@@ -373,13 +380,28 @@ def _media_player(item):
 
 
 @bp.route("/news")
+def news_legacy():
+    return redirect(url_for("main.news", **request.args.to_dict(flat=True)))
+
+
+@bp.route("/featured")
 def news():
     worlds = featured_worlds()
     world = request.args.get("world", "").strip()
     if world not in {w["slug"] for w in worlds}:
         world = ""
     items = news_items(world or None)
-    return render_template("news.html", items=items, world=world, worlds=worlds)
+    news_total = len(items)
+    items, page, pages, _ = page_of(items, 6)
+    return render_template(
+        "news.html",
+        items=items,
+        news_total=news_total,
+        page=page,
+        pages=pages,
+        world=world,
+        worlds=worlds,
+    )
 
 
 def _chat_session():
@@ -443,10 +465,48 @@ def support_chat():
     if len(message) > 500:
         message = message[:500]
     _save_turn("user", message)
-    answer = reply_to(message, session.get("guide_step", 0))
-    session["guide_step"] = answer.get("guide_step", 0)
-    _save_turn("assistant", answer["text"], answer.get("faq_id"))
-    return jsonify(text=answer["text"], links=answer.get("links", []))
+    guide_step = session.get("guide_step", 0)
+    scripted = reply_to(message, guide_step, use_gemini=False)
+    on_tour = scripted.get("guide_step", 0) != guide_step or (
+        guide_step and scripted.get("text", "").startswith("No problem")
+    )
+    if on_tour:
+        session["guide_step"] = scripted.get("guide_step", 0)
+    else:
+        session["guide_step"] = 0
+
+    def sse(payload_row):
+        return f"data: {json.dumps(payload_row)}\n\n"
+
+    def events():
+        parts = []
+        links = []
+        try:
+            if on_tour:
+                parts.append(scripted["text"])
+                links = scripted.get("links") or []
+                yield sse({"text": scripted["text"]})
+            else:
+                for chunk in fandom_chat().stream_answer(message):
+                    parts.append(chunk)
+                    yield sse({"text": chunk})
+                links = related_links(message)
+        except Exception:
+            current_app.logger.exception("Mina stream failed")
+            fallback = reply_to(message, guide_step, use_gemini=False)
+            parts = [fallback["text"]]
+            links = fallback.get("links") or []
+            yield sse({"text": fallback["text"]})
+        text = "".join(parts).strip()
+        if text:
+            _save_turn("assistant", text)
+        yield sse({"done": True, "links": links})
+
+    return Response(
+        stream_with_context(events()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 @bp.route("/sitemap")
@@ -541,9 +601,42 @@ def events():
             you = {"lat": float(lat), "lng": float(lng)}
         except ValueError:
             you = None
+    viewer = current_user()
+    saved_event_ids = set()
+    if viewer is not None and viewer.is_member:
+        saved_event_ids = {
+            row.event_id
+            for row in Bookmark.query.filter(Bookmark.user_id == viewer.user_id, Bookmark.event_id.isnot(None))
+        }
+    focus_event = request.args.get("event", "").strip()
+    per_page = 6
+    if focus_event.isdigit() and not request.args.get("page"):
+        ids = [item["id"] for item in pins]
+        if int(focus_event) in ids:
+            page = ids.index(int(focus_event)) // per_page + 1
+            pages = max(1, (len(pins) + per_page - 1) // per_page)
+            shown = pins[(page - 1) * per_page : page * per_page]
+        else:
+            shown, page, pages, _ = page_of(pins, per_page)
+    else:
+        shown, page, pages, _ = page_of(pins, per_page)
+    event_query = {
+        key: value
+        for key, value in {
+            "city": city,
+            "event_type": event_type,
+            "category": category,
+            "from": date_from,
+            "to": date_to,
+            "lat": request.args.get("lat", ""),
+            "lng": request.args.get("lng", ""),
+        }.items()
+        if value
+    }
     return render_template(
         "events.html",
-        events=pins,
+        events=shown,
+        saved_event_ids=saved_event_ids,
         map_pins=_map_pins(pins),
         you=you,
         cities=cities,
@@ -554,6 +647,9 @@ def events():
         category=category,
         date_from=date_from,
         date_to=date_to,
+        page=page,
+        pages=pages,
+        event_query=event_query,
     )
 
 
@@ -573,6 +669,7 @@ def characters():
         else:
             query = query.filter(CharacterProfile.character_id == 0)
     rows = query.order_by(CharacterProfile.name.asc()).all()
+    rows, page, pages, _ = page_of(rows, 12)
     cats = {c.category_id: c for c in Category.query.all()}
     fans = {f.fandom_id: f for f in Fandom.query.all()}
     cards = []
@@ -593,6 +690,9 @@ def characters():
         fandoms=Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all(),
         category=category,
         fandom=fandom,
+        page=page,
+        pages=pages,
+        list_query={key: value for key, value in {"category": category, "fandom": fandom}.items() if value},
     )
 
 
@@ -619,6 +719,11 @@ def character_detail(character_id):
 
 
 @bp.route("/merchandise")
+def merchandise_legacy():
+    return redirect(url_for("main.merchandise", **request.args.to_dict(flat=True)))
+
+
+@bp.route("/merch")
 def merchandise():
     category = request.args.get("category", "").strip()
     fandom = request.args.get("fandom", "").strip()
@@ -644,10 +749,11 @@ def merchandise():
     if upcoming == "yes":
         query = query.filter(MerchandiseItem.is_upcoming.is_(True))
     rows = query.order_by(MerchandiseItem.name.asc()).all()
+    rows, page, pages, _ = page_of(rows, 12)
     tag_map = {}
     for link in MerchandiseTag.query.all():
-        tag = db.session.get(Tag, link.tag_id)
-        tag_map.setdefault(link.item_id, []).append(tag.name if tag else "")
+        named_tag = db.session.get(Tag, link.tag_id)
+        tag_map.setdefault(link.item_id, []).append(named_tag.name if named_tag else "")
     cats = {c.category_id: c for c in Category.query.all()}
     fans = {f.fandom_id: f for f in Fandom.query.all()}
     cards = [
@@ -669,6 +775,18 @@ def merchandise():
         fandom=fandom,
         tag=tag,
         upcoming=upcoming == "yes",
+        page=page,
+        pages=pages,
+        list_query={
+            key: value
+            for key, value in {
+                "category": category,
+                "fandom": fandom,
+                "tag": tag,
+                "upcoming": "yes" if upcoming == "yes" else "",
+            }.items()
+            if value
+        },
     )
 
 
@@ -680,10 +798,25 @@ def upcoming():
         .all()
     )
     merch = MerchandiseItem.query.filter_by(is_upcoming=True).order_by(MerchandiseItem.release_date.asc()).all()
-    return render_template("upcoming.html", contents=contents, merch=merch)
+    contents, page, pages, _ = page_of(contents, 8)
+    merch, mpage, mpages, _ = page_of(merch, 8, "mpage")
+    return render_template(
+        "upcoming.html",
+        contents=contents,
+        merch=merch,
+        page=page,
+        pages=pages,
+        mpage=mpage,
+        mpages=mpages,
+    )
 
 
 @bp.route("/merchandise/<int:item_id>")
+def merchandise_detail_legacy(item_id):
+    return redirect(url_for("main.merchandise_detail", item_id=item_id))
+
+
+@bp.route("/merch/<int:item_id>")
 def merchandise_detail(item_id):
     row = db.session.get(MerchandiseItem, item_id)
     if row is None:

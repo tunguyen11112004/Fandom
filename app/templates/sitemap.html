@@ -3,11 +3,6 @@
 {% block body_class %}stack-map{% endblock %}
 {% block content %}
   <header class="page-head">
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="{{ url_for('main.home') }}">Home</a>
-      <span aria-hidden="true">/</span>
-      <span aria-current="page">Sitemap</span>
-    </nav>
     <h1>Sitemap</h1>
     <p>Required on the home journey. Every live room below is a working page, not a placeholder.</p>
   </header>
@@ -17,10 +12,10 @@
       <ul>
         <li><a href="{{ url_for('main.home') }}">Home</a></li>
         <li><a href="{{ url_for('main.explore') }}">Explore</a></li>
-        <li><a href="{{ url_for('main.media_center') }}">Media center</a></li>
-        <li><a href="{{ url_for('main.news') }}">Featured articles</a></li>
+        <li><a href="{{ url_for('main.media_center') }}">Media</a></li>
+        <li><a href="{{ url_for('main.news') }}">Featured</a></li>
         <li><a href="{{ url_for('main.characters') }}">Characters</a></li>
-        <li><a href="{{ url_for('main.merchandise') }}">Merchandise</a></li>
+        <li><a href="{{ url_for('main.merchandise') }}">Merch</a></li>
         <li><a href="{{ url_for('main.upcoming') }}">Upcoming releases</a></li>
         <li><a href="{{ url_for('main.events') }}">Events</a></li>
         {% for category in categories %}
@@ -36,12 +31,13 @@
         <li><a href="{{ url_for('account.register') }}">Register</a></li>
         <li><a href="{{ url_for('account.login') }}">Sign in</a></li>
         <li><a href="{{ url_for('account.forgot') }}">Forgot password</a></li>
-        <li><a href="{{ url_for('account.dashboard') }}">Member dashboard</a></li>
+        <li><a href="{{ url_for('account.dashboard') }}">Bookmarks</a></li>
+        <li><a href="{{ url_for('account.sent_pieces') }}">What you sent</a></li>
         <li><a href="{{ url_for('account.profile') }}">Profile</a></li>
         <li><a href="{{ url_for('account.display') }}">Display</a></li>
-        <li><a href="{{ url_for('account.submissions') }}">Fan submissions</a></li>
+        <li><a href="{{ url_for('account.submissions') }}">Contribute</a></li>
         <li><a href="{{ url_for('account.feedback') }}">Feedback</a></li>
-        <li><a href="{{ url_for('account.admin_login') }}">Admin gate</a></li>
+        <li><a href="{{ url_for('account.admin_home', tab='dashboard') }}">Dashboard</a></li>
       </ul>
     </section>
   </div>

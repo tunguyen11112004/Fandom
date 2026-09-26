@@ -32,38 +32,65 @@ function setOpen(open) {
   if (open) input.focus();
 }
 
-function wait(ms) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
-function showTyping() {
-  const item = document.createElement("article");
-  item.className = "support-msg assistant typing";
-  item.innerHTML = "<p>Mina is typing<span></span><span></span><span></span></p>";
-  log.appendChild(item);
-  log.scrollTop = log.scrollHeight;
-  return item;
-}
-
 async function send(message) {
   addMessage("user", message);
   input.value = "";
-  const typing = showTyping();
-  const response = await fetch("/support/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  const data = await response.json();
-  const text = data.text || data.error || "Sorry, that didn't go through. Try me again?";
-  const pause = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ? 0
-    : Math.min(1600, 500 + text.length * 12);
-  await wait(pause);
-  typing.remove();
-  addMessage("assistant", text, data.links || []);
+  const item = document.createElement("article");
+  item.className = "support-msg assistant";
+  const body = document.createElement("p");
+  item.appendChild(body);
+  log.appendChild(item);
+  const csrf = document.querySelector('meta[name="csrf"]');
+  try {
+    const response = await fetch("/support/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf ? csrf.getAttribute("content") || "" : "",
+      },
+      body: JSON.stringify({ message }),
+    });
+    if (!response.ok || !response.body) {
+      const failed = await response.json().catch(() => ({}));
+      body.textContent = failed.error || "Sorry, that didn't go through. Try me again?";
+      return;
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      lines.forEach((line) => {
+        if (!line.startsWith("data: ")) return;
+        const raw = line.slice(6).trim();
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (parsed.text) {
+          body.textContent += parsed.text;
+          log.scrollTop = log.scrollHeight;
+        }
+        if (parsed.links && parsed.links.length) {
+          const list = document.createElement("p");
+          list.className = "support-links";
+          parsed.links.forEach((link) => {
+            const anchor = document.createElement("a");
+            anchor.href = link.href;
+            anchor.textContent = link.label;
+            list.appendChild(anchor);
+          });
+          item.appendChild(list);
+        }
+        if (parsed.error) body.textContent = parsed.error;
+      });
+    }
+    if (!body.textContent) body.textContent = "Sorry, that didn't go through. Try me again?";
+  } catch (err) {
+    body.textContent = "Sorry, that didn't go through. Try me again?";
+  }
 }
 
 toggle.addEventListener("click", () => setOpen(panel.hidden));

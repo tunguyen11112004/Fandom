@@ -1,81 +1,171 @@
 {% extends "base.html" %}
-{% block title %}Send a piece · Fan Hub Plus{% endblock %}
-{% block body_class %}stack-anime auth desk{% endblock %}
+{% block title %}Contribute · Fan Hub Plus{% endblock %}
+{% block extra_head %}
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+{% endblock %}
+{% block body_class %}stack-anime fan-compose-page{% endblock %}
 {% block content %}
-<section class="auth-panel desk-panel">
-  <p class="kicker">Fan desk</p>
-  {% if edit %}
-    <h1>Revise this piece</h1>
-    <p>The fields below are the piece that was sent back{% if edit.reject_reason %}: {{ edit.reject_reason }}{% else %}.{% endif %} Change what you need, then send it again.</p>
-  {% else %}
-    <h1>Send something in</h1>
-    <p>It stays pending until an admin publishes it or sends it back with a reason.</p>
-  {% endif %}
-  {% if mine %}
-  <ul class="desk-list">
-    {% for row in mine %}
-      <li>
-        <strong>{{ row.title }}</strong>
-        <span class="chip">{{ row.status }}</span>
-        {% if row.status == 'rejected' %}
-          <a href="{{ url_for('account.submissions', edit=row.id) }}#desk-form">Revise</a>
-          {% if row.reject_reason %}<p>{{ row.reject_reason }}</p>{% endif %}
-        {% endif %}
-      </li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  {% if edit %}<p class="auth-links"><a href="{{ url_for('account.submissions', new=1) }}">Start a blank piece</a></p>{% endif %}
-  <form id="desk-form" method="post" class="desk-form" enctype="multipart/form-data">
-    {% if edit %}<input type="hidden" name="submission_id" value="{{ edit.id }}" />{% endif %}
-    <label for="title">Title</label>
-    <input id="title" name="title" required maxlength="200" value="{{ edit.title if edit else '' }}" />
-    <label for="category_id">Category</label>
-    <select id="category_id" name="category_id" required>
-      {% for category in categories %}
-        <option value="{{ category.id }}" {% if edit and edit.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
-      {% endfor %}
-    </select>
-    <label for="fandom_id">Fandom</label>
-    <select id="fandom_id" name="fandom_id" required>
-      <option value="">Choose a fandom</option>
-      {% for fan in fandoms %}
-        <option value="{{ fan.fandom_id }}" {% if edit and edit.fandom_id == fan.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
-      {% endfor %}
-    </select>
-    <label for="content_type">Type</label>
-    <select id="content_type" name="content_type">
-      {% for kind, label in [('article', 'Article'), ('image', 'Image'), ('video', 'Video'), ('audio', 'Audio'), ('profile', 'Character note')] %}
-        <option value="{{ kind }}" {% if edit and edit.content_type == kind %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    <label for="body">The piece</label>
-    <textarea id="body" name="body" rows="6" required>{{ edit.body if edit else '' }}</textarea>
-    <div class="media-slot" data-media="image" hidden>
-      <label for="image-url">Image link
+<section class="fan-compose">
+  <header class="fan-compose-hero">
+    {% if edit %}
+      <h1>{% if edit.status == 'rejected' %}Revise this piece{% else %}Edit this piece{% endif %}</h1>
+      <p>{% if edit.reject_reason %}Sent back: {{ edit.reject_reason }}. {% endif %}Read it, then change what is wrong. You can save an edit once every 5 minutes.{% if edit_wait %} Next edit in {{ edit_wait }}.{% endif %}</p>
+    {% else %}
+      <h1>Contribute a piece</h1>
+      <p>Share an article, image, video, or audio note. You can send 10 pieces every 12 hours. It stays pending until an admin publishes it or sends it back.{% if post_wait %} Next piece in {{ post_wait }}.{% endif %}</p>
+    {% endif %}
+  </header>
+
+  <p class="fan-blank"><a class="button quiet" href="{{ url_for('account.sent_pieces') }}">What you sent</a></p>
+  {% if edit %}<p class="fan-blank"><a class="button quiet" href="{{ url_for('account.submissions', new=1) }}">Start a blank piece</a></p>{% endif %}
+
+  <div class="fan-compose-grid">
+    <form id="desk-form" class="fan-card" method="post" enctype="multipart/form-data" data-compose>
+      {% if edit %}<input type="hidden" name="submission_id" value="{{ edit.id }}" />{% endif %}
+
+      <div class="fan-field">
+        <div class="fan-label-row">
+          <label for="title"><span class="material-symbols-outlined" aria-hidden="true">title</span> Title <span class="need">*</span></label>
+          <span data-count>0/200</span>
+        </div>
+        <input id="title" name="title" required maxlength="200" value="{{ edit.title if edit else '' }}" placeholder="A short title for this piece" />
+      </div>
+
+      <fieldset class="fan-field">
+        <legend><span class="material-symbols-outlined" aria-hidden="true">category</span> Category <span class="need">*</span></legend>
+        <p>Pick the shelf this piece belongs on.</p>
+        <div class="fan-cats">
+          {% for category in categories %}
+            <label class="fan-cat">
+              <input type="radio" name="category_id" value="{{ category.id }}" data-label="{{ category.name }}" required {% if edit and edit.category_id == category.id %}checked{% elif not edit and loop.first %}checked{% endif %} />
+              <span>{{ category.name }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="fan-field">
+        <label for="fandom_id"><span class="material-symbols-outlined" aria-hidden="true">groups</span> Fandom <span class="need">*</span></label>
+        <select id="fandom_id" name="fandom_id" data-fandoms required>
+          <option value="">Choose a fandom in this category</option>
+          {% for fan in fandoms %}
+            <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if edit and edit.fandom_id == fan.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="fan-field">
+        <label for="genre"><span class="material-symbols-outlined" aria-hidden="true">theater_comedy</span> Genre <span class="need">*</span></label>
+        <input id="genre" name="genre" required maxlength="60" list="genre-list" value="{{ edit.genre if edit and edit.genre else '' }}" placeholder="Action, Pop, Mystery…" />
+        <datalist id="genre-list">
+          {% for genre in genres %}<option value="{{ genre.name }}"></option>{% endfor %}
+        </datalist>
+      </div>
+
+      <div class="fan-field">
+        <label for="release_year"><span class="material-symbols-outlined" aria-hidden="true">calendar_today</span> Release year <span class="need">*</span></label>
+        <input id="release_year" name="release_year" required inputmode="numeric" minlength="4" maxlength="4" pattern="[0-9]{4}" value="{{ edit.release_year if edit and edit.release_year else '' }}" placeholder="2024" />
+      </div>
+
+      <div class="fan-field">
+        <label for="summary"><span class="material-symbols-outlined" aria-hidden="true">short_text</span> Summary <span class="need">*</span></label>
+        <textarea id="summary" name="summary" rows="2" required maxlength="500" placeholder="One or two sentences. This is the line on Explore and under the title.">{{ edit.summary if edit and edit.summary else '' }}</textarea>
+      </div>
+
+      <fieldset class="fan-field">
+        <legend><span class="material-symbols-outlined" aria-hidden="true">layers</span> Type</legend>
+        <div class="fan-types">
+          {% for kind, label in [('article', 'Article'), ('image', 'Image'), ('video', 'Video'), ('audio', 'Audio'), ('profile', 'Character note')] %}
+            <label class="fan-type">
+              <input type="radio" name="content_type" value="{{ kind }}" {% if edit and edit.content_type == kind %}checked{% elif not edit and kind == 'article' %}checked{% elif edit and edit.content_type not in ['article', 'image', 'video', 'audio', 'profile'] and kind == 'article' %}checked{% endif %} />
+              <span>{{ label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="fan-field">
+        <label for="body"><span class="material-symbols-outlined" aria-hidden="true">edit_note</span> The piece <span class="need">*</span></label>
+        <textarea id="body" name="body" rows="9" placeholder="Write the piece. Headings, lists, and links are saved with it.">{{ edit.body if edit else '' }}</textarea>
+      </div>
+
+      <div class="fan-field" data-media="image" hidden>
+        <label for="image-url"><span class="material-symbols-outlined" aria-hidden="true">link</span> Image link</label>
         <input id="image-url" name="media_url" type="url" placeholder="https://" value="{{ edit.media_url if edit and edit.content_type == 'image' else '' }}" />
-      </label>
-    </div>
-    <div class="media-slot" data-media="video" hidden>
-      <label for="video-url">Video link
+      </div>
+      <div class="fan-field" data-media="video" hidden>
+        <label for="video-url"><span class="material-symbols-outlined" aria-hidden="true">smart_display</span> Video link</label>
         <input id="video-url" name="media_url" type="url" placeholder="https://www.youtube.com/watch?v=..." value="{{ edit.media_url if edit and edit.content_type == 'video' and edit.media_url and edit.media_url.startswith('http') else '' }}" />
-      </label>
-      <label for="video-file">Or upload a video
-        <input id="video-file" name="media_file" type="file" accept=".mp4,.webm,video/*" />
-      </label>
-    </div>
-    <div class="media-slot" data-media="audio" hidden>
-      <label for="audio-url">Audio link
+        <label class="fan-drop" for="video-file">
+          <input id="video-file" name="media_file" type="file" accept=".mp4,.webm,video/*" />
+          <span class="material-symbols-outlined" aria-hidden="true">cloud_upload</span>
+          <span>Or upload a video. MP4 or WebM. Leave this empty if the link is enough.</span>
+        </label>
+      </div>
+      <div class="fan-field" data-media="audio" hidden>
+        <label for="audio-url"><span class="material-symbols-outlined" aria-hidden="true">music_note</span> Audio link</label>
         <input id="audio-url" name="media_url" type="url" placeholder="https://example.com/track.mp3" value="{{ edit.media_url if edit and edit.content_type == 'audio' and edit.media_url and edit.media_url.startswith('http') else '' }}" />
+        <label class="fan-drop" for="audio-file">
+          <input id="audio-file" name="media_file" type="file" accept=".mp3,.wav,.m4a,.ogg,audio/*" />
+          <span class="material-symbols-outlined" aria-hidden="true">cloud_upload</span>
+          <span>Or upload an audio file. MP3, WAV, M4A, or OGG.</span>
+        </label>
+      </div>
+
+      <div class="fan-field">
+        <label for="cover"><span class="material-symbols-outlined" aria-hidden="true">image</span> Cover image</label>
+        <input id="cover" name="cover_image_url" type="url" placeholder="https://" value="{{ edit.cover_image_url if edit and edit.cover_image_url else '' }}" />
+      </div>
+      <div class="fan-field">
+        <label for="tags"><span class="material-symbols-outlined" aria-hidden="true">sell</span> Tags</label>
+        <input id="tags" name="tags" maxlength="255" placeholder="Limited Edition, Collectible" value="{{ edit.tags if edit and edit.tags else '' }}" />
+      </div>
+      <div class="fan-field">
+        <label for="timeline"><span class="material-symbols-outlined" aria-hidden="true">timeline</span> Timeline</label>
+        <textarea id="timeline" name="timeline" rows="3" placeholder="1999 | First chapter | One line about that beat">{{ edit.timeline_text if edit and edit.timeline_text else '' }}</textarea>
+      </div>
+      <div class="fan-field">
+        <label for="source_name"><span class="material-symbols-outlined" aria-hidden="true">source</span> Source name</label>
+        <input id="source_name" name="source_name" maxlength="150" placeholder="Official trailer, fan notes…" value="{{ edit.source_name if edit and edit.source_name else '' }}" />
+      </div>
+      <div class="fan-field">
+        <label for="source_url"><span class="material-symbols-outlined" aria-hidden="true">link</span> Source link</label>
+        <input id="source_url" name="source_url" type="url" placeholder="https://" value="{{ edit.source_url if edit and edit.source_url else '' }}" />
+      </div>
+
+      <label class="fan-rights">
+        <input type="checkbox" name="rights" value="yes" required />
+        <span>I have the right to share this.</span>
       </label>
-      <label for="audio-file">Or upload an audio file
-        <input id="audio-file" name="media_file" type="file" accept=".mp3,.wav,.m4a,.ogg,audio/*" />
-      </label>
-    </div>
-    <label class="check"><input type="checkbox" name="rights" value="yes" required /> I have the right to share this.</label>
-    {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
-    <button type="submit">{% if edit %}Send the revision{% else %}Send for review{% endif %}</button>
-  </form>
-  <p class="auth-links"><a href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
+      {% if error %}<p class="fan-error" role="alert">{{ error }}</p>{% endif %}
+
+      <div class="fan-actions">
+        <a class="button quiet" href="{{ url_for('account.dashboard') }}">Back to your desk</a>
+        <button type="submit">{% if edit %}Send the revision{% else %}Send for review{% endif %}</button>
+      </div>
+    </form>
+
+    <aside class="fan-side">
+      <section class="fan-card">
+        <h2><span class="fan-live" aria-hidden="true"></span> Preview</h2>
+        <article class="fan-preview">
+          <p class="fan-preview-cat" data-preview-category>Category</p>
+          <h3 data-preview-title>The title shows here</h3>
+          <p data-preview-body>A short excerpt shows here.</p>
+          <p class="fan-preview-by">{{ user.name }}</p>
+        </article>
+      </section>
+      <section class="fan-card">
+        <h2>Before you send</h2>
+        <ul class="fan-rules">
+          <li>It does not reach Explore immediately. An admin publishes it or sends it back with a reason.</li>
+          <li>The fandom has to belong to the category you picked.</li>
+          <li>Summary, genre, and year are what Explore and the title page show beside the story.</li>
+          <li>An image needs a link. Video and audio need a link or a file. A cover link puts a picture on the page.</li>
+          <li>Only send something you have the right to share.</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
 </section>
 {% endblock %}

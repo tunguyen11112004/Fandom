@@ -186,7 +186,7 @@
             <div class="card-copy">
               <span class="index">{{ "%02d"|format(loop.index) }}</span>
               <h3>{{ category.name }}</h3>
-              <p>{{ category.description }}</p>
+              <p>{{ category.description|striptags }}</p>
               <span class="count">{{ counts.get(category.slug, 0) }} items</span>
             </div>
           </a>
