@@ -45,9 +45,9 @@
       </fieldset>
 
       <div class="fan-field">
-        <label for="fandom_id"><span class="material-symbols-outlined" aria-hidden="true">groups</span> Fandom <span class="need">*</span></label>
-        <select id="fandom_id" name="fandom_id" data-fandoms required>
-          <option value="">Choose a fandom in this category</option>
+        <label for="fandom_id"><span class="material-symbols-outlined" aria-hidden="true">groups</span> Fandom</label>
+        <select id="fandom_id" name="fandom_id" data-fandoms>
+          <option value="">No fandom</option>
           {% for fan in fandoms %}
             <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if edit and edit.fandom_id == fan.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
           {% endfor %}
@@ -55,21 +55,21 @@
       </div>
 
       <div class="fan-field">
-        <label for="genre"><span class="material-symbols-outlined" aria-hidden="true">theater_comedy</span> Genre <span class="need">*</span></label>
-        <input id="genre" name="genre" required maxlength="60" list="genre-list" value="{{ edit.genre if edit and edit.genre else '' }}" placeholder="Action, Pop, Mystery…" />
+        <label for="genre"><span class="material-symbols-outlined" aria-hidden="true">theater_comedy</span> Genre</label>
+        <input id="genre" name="genre" maxlength="60" list="genre-list" value="{{ edit.genre if edit and edit.genre else '' }}" placeholder="Action, Pop, Mystery…" />
         <datalist id="genre-list">
           {% for genre in genres %}<option value="{{ genre.name }}"></option>{% endfor %}
         </datalist>
       </div>
 
       <div class="fan-field">
-        <label for="release_year"><span class="material-symbols-outlined" aria-hidden="true">calendar_today</span> Release year <span class="need">*</span></label>
-        <input id="release_year" name="release_year" required inputmode="numeric" minlength="4" maxlength="4" pattern="[0-9]{4}" value="{{ edit.release_year if edit and edit.release_year else '' }}" placeholder="2024" />
+        <label for="release_year"><span class="material-symbols-outlined" aria-hidden="true">calendar_today</span> Release year</label>
+        <input id="release_year" name="release_year" inputmode="numeric" minlength="4" maxlength="4" pattern="[0-9]{4}" value="{{ edit.release_year if edit and edit.release_year else '' }}" placeholder="2024" />
       </div>
 
       <div class="fan-field">
-        <label for="summary"><span class="material-symbols-outlined" aria-hidden="true">short_text</span> Summary <span class="need">*</span></label>
-        <textarea id="summary" name="summary" rows="2" required maxlength="500" placeholder="One or two sentences. This is the line on Explore and under the title.">{{ edit.summary if edit and edit.summary else '' }}</textarea>
+        <label for="summary"><span class="material-symbols-outlined" aria-hidden="true">short_text</span> Summary</label>
+        <textarea id="summary" name="summary" rows="2" maxlength="500" placeholder="One or two sentences. This is the line on Explore and under the title.">{{ edit.summary if edit and edit.summary else '' }}</textarea>
       </div>
 
       <fieldset class="fan-field">
@@ -91,7 +91,12 @@
 
       <div class="fan-field" data-media="image" hidden>
         <label for="image-url"><span class="material-symbols-outlined" aria-hidden="true">link</span> Image link</label>
-        <input id="image-url" name="media_url" type="url" placeholder="https://" value="{{ edit.media_url if edit and edit.content_type == 'image' else '' }}" />
+        <input id="image-url" name="media_url" type="text" placeholder="https://" value="{{ edit.media_url if edit and edit.content_type == 'image' and edit.media_url else '' }}" />
+        <label class="fan-drop" for="image-file">
+          <input id="image-file" name="media_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+          <span class="material-symbols-outlined" aria-hidden="true">cloud_upload</span>
+          <span>Or upload an image. PNG, JPG, WEBP, or GIF. Leave this empty if the link is enough.</span>
+        </label>
       </div>
       <div class="fan-field" data-media="video" hidden>
         <label for="video-url"><span class="material-symbols-outlined" aria-hidden="true">smart_display</span> Video link</label>
@@ -114,7 +119,12 @@
 
       <div class="fan-field">
         <label for="cover"><span class="material-symbols-outlined" aria-hidden="true">image</span> Cover image</label>
-        <input id="cover" name="cover_image_url" type="url" placeholder="https://" value="{{ edit.cover_image_url if edit and edit.cover_image_url else '' }}" />
+        <input id="cover" name="cover_image_url" type="text" placeholder="https://" value="{{ edit.cover_image_url if edit and edit.cover_image_url else '' }}" />
+        <label class="fan-drop" for="cover-file">
+          <input id="cover-file" name="cover_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+          <span class="material-symbols-outlined" aria-hidden="true">cloud_upload</span>
+          <span>Or upload the cover. A saved file stays on the hub if the link goes away.</span>
+        </label>
       </div>
       <div class="fan-field">
         <label for="tags"><span class="material-symbols-outlined" aria-hidden="true">sell</span> Tags</label>
@@ -140,7 +150,7 @@
       {% if error %}<p class="fan-error" role="alert">{{ error }}</p>{% endif %}
 
       <div class="fan-actions">
-        <a class="button quiet" href="{{ url_for('account.dashboard') }}">Back to your desk</a>
+        <a class="button quiet" href="{{ url_for('account.profile') }}">Back to profile</a>
         <button type="submit">{% if edit %}Send the revision{% else %}Send for review{% endif %}</button>
       </div>
     </form>

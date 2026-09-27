@@ -58,6 +58,20 @@
     }[ch]));
   }
 
+  const countryName = {
+    US: "United States",
+    UK: "United Kingdom",
+    DE: "Germany",
+    KR: "South Korea",
+    JP: "Japan",
+  };
+
+  function placeQuery(pin) {
+    const country = countryName[pin.country] || pin.country || "";
+    const street = pin.address && pin.address !== pin.city ? pin.address : "";
+    return [pin.venue, street, pin.city, country].filter(Boolean).join(", ");
+  }
+
   pins.forEach((pin) => {
     const marker = L.circleMarker([pin.lat, pin.lng], {
       radius: 8,
@@ -67,13 +81,23 @@
       fillOpacity: 1,
       className: "gps-dot",
     });
-    const lines = (pin.events || [])
-      .map(
-        (event) =>
-          `<p><a href="#${escapeHtml(event.id)}">${escapeHtml(event.title)}</a><br />${escapeHtml(event.kind)} · ${escapeHtml(event.when)}</p>`
-      )
-      .join("");
-    marker.bindPopup(`<strong>${escapeHtml(pin.city)}</strong>${lines}`, { className: "gps-popup" });
+    const country = countryName[pin.country] || pin.country || "";
+    const street = pin.address && pin.address !== pin.city ? pin.address : "";
+    const streetHasCity = street && pin.city && street.toLowerCase().includes(String(pin.city).toLowerCase());
+    const tail = streetHasCity ? country : [pin.city, country].filter(Boolean).join(", ");
+    const query = placeQuery(pin);
+    const maps = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query);
+    const address = [pin.venue, street, tail]
+      .filter(Boolean)
+      .map((line) => escapeHtml(line))
+      .join("<br />");
+    marker.bindPopup(
+      `<strong>${escapeHtml(pin.title || pin.city)}</strong>` +
+        `<p>${escapeHtml(pin.kind || "")}${pin.when ? " · " + escapeHtml(pin.when) : ""}</p>` +
+        `<p>${address}</p>` +
+        `<p><a href="${maps}" target="_blank" rel="noreferrer">Open in Google Maps</a></p>`,
+      { className: "gps-popup" }
+    );
     marker.bindTooltip(pin.city, {
       permanent: true,
       direction: "top",

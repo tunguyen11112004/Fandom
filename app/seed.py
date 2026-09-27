@@ -522,26 +522,27 @@ def seed_showcase_if_empty(session: Session) -> None:
 
     if session.query(Event).count() == 0:
         rows = [
-            ("Anime Expo", "convention", "Los Angeles", "US", 34.05, -118.24, datetime(2026, 7, 4, 10, 0), "anime", "https://www.anime-expo.org/"),
-            ("MCM Comic Con", "convention", "London", "UK", 51.51, -0.13, datetime(2026, 10, 23, 10, 0), "comics", "https://www.mcmcomiccon.com/"),
-            ("Gamescom", "convention", "Cologne", "DE", 50.94, 6.96, datetime(2026, 8, 26, 9, 0), "gaming", "https://www.gamescom.global/"),
-            ("Stadium night", "screening", "Seoul", "KR", 37.57, 126.98, datetime(2026, 9, 20, 19, 0), "k-pop", None),
-            ("Comiket", "convention", "Tokyo", "JP", 35.68, 139.69, datetime(2026, 8, 14, 10, 0), "manga", None),
+            ("Anime Expo", "convention", "Los Angeles Convention Center", "1201 S Figueroa Street, Los Angeles, CA 90015", "Los Angeles", "US", 34.0403, -118.2696, datetime(2026, 7, 4, 10, 0), "anime", "https://www.anime-expo.org/"),
+            ("MCM Comic Con", "convention", "ExCeL London", "1 Western Gateway, Royal Victoria Dock, London E16 1XL", "London", "UK", 51.5081, 0.0295, datetime(2026, 10, 23, 10, 0), "comics", "https://www.mcmcomiccon.com/"),
+            ("Gamescom", "convention", "Koelnmesse", "Messeplatz 1, 50679 Cologne", "Cologne", "DE", 50.9458, 6.9816, datetime(2026, 8, 26, 9, 0), "gaming", "https://www.gamescom.global/"),
+            ("Stadium night", "screening", "Seoul Olympic Stadium", "424 Olympic-ro, Songpa-gu, Seoul", "Seoul", "KR", 37.5158, 127.0728, datetime(2026, 9, 20, 19, 0), "k-pop", None),
+            ("Comiket", "convention", "Tokyo Big Sight", "3-11-1 Ariake, Koto City, Tokyo 135-0063", "Tokyo", "JP", 35.6297, 139.7945, datetime(2026, 8, 14, 10, 0), "manga", None),
         ]
-        for title, etype, city, country, lat, lng, start, cat_slug, ticket in rows:
+        for title, etype, venue, address, city, country, lat, lng, start, cat_slug, ticket in rows:
             cat = cats.get(cat_slug)
             session.add(
                 Event(
                     category_id=cat.category_id if cat else None,
                     title=title,
                     event_type=etype,
+                    venue=venue,
+                    address=address,
                     city=city,
                     country=country,
                     latitude=lat,
                     longitude=lng,
                     start_at=start,
                     ticket_url=ticket,
-                    venue=city,
                 )
             )
 
@@ -783,14 +784,22 @@ def seed_detail_gaps(session: Session) -> None:
         "Stadium night": "An evening screening and fan gathering in Seoul. No ticket link is on file, so the page only keeps the date and the city.",
         "Comiket": "Tokyo's doujin market. The listing is a date and a city for fans who already know the halls.",
     }
+    places = {
+        "Anime Expo": ("Los Angeles Convention Center", "1201 S Figueroa Street, Los Angeles, CA 90015", 34.0403, -118.2696),
+        "MCM Comic Con": ("ExCeL London", "1 Western Gateway, Royal Victoria Dock, London E16 1XL", 51.5081, 0.0295),
+        "Gamescom": ("Koelnmesse", "Messeplatz 1, 50679 Cologne", 50.9458, 6.9816),
+        "Stadium night": ("Seoul Olympic Stadium", "424 Olympic-ro, Songpa-gu, Seoul", 37.5158, 127.0728),
+        "Comiket": ("Tokyo Big Sight", "3-11-1 Ariake, Koto City, Tokyo 135-0063", 35.6297, 139.7945),
+    }
     for title, description in event_copy.items():
         row = session.query(Event).filter_by(title=title).first()
-        if row is not None and not row.description:
+        if row is None:
+            continue
+        if not row.description:
             row.description = description
-            if not row.venue or row.venue == row.city:
-                row.venue = f"{title} hall"
-            if not row.address:
-                row.address = row.city
+        place = places.get(title)
+        if place and (not row.address or row.address == row.city or (row.venue or "").endswith(" hall")):
+            row.venue, row.address, row.latitude, row.longitude = place
 
     beats = {
         "one-piece": [

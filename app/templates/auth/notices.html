@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_pager.html" import pager %}
+{% block title %}Notices · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-cosplay auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <header class="desk-top">
+    <div>
+      <p class="kicker">Profile</p>
+      <h1>Notices</h1>
+      <p>{{ total }} decision{{ '' if total == 1 else 's' }} on pieces you sent.</p>
+    </div>
+    <nav class="desk-actions" aria-label="Notice actions">
+      <a href="{{ url_for('account.profile') }}">Profile</a>
+    </nav>
+  </header>
+
+  <form method="get" class="ticket-filters">
+    <label for="notice-state">Status
+      <select id="notice-state" name="state">
+        <option value="all" {% if state == 'all' %}selected{% endif %}>All</option>
+        <option value="unread" {% if state == 'unread' %}selected{% endif %}>Unread</option>
+        <option value="read" {% if state == 'read' %}selected{% endif %}>Read</option>
+      </select>
+    </label>
+    <label for="notice-q">Search
+      <input id="notice-q" name="q" value="{{ q }}" placeholder="Title" />
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if notices %}
+    <ul class="desk-list">
+      {% for notice in notices %}
+        <li>
+          <div class="row-title">
+            <strong>{{ notice.title }}</strong>
+            {% if not notice.is_read %}<span class="chip">New</span>{% endif %}
+          </div>
+          <p>{{ notice.body }}</p>
+          {% if not notice.is_read %}
+            <form method="post" action="{{ url_for('account.read_notice', notification_id=notice.notification_id) }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}" />
+              <button class="quiet" type="submit">Mark read</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    {{ pager(page, pages, 'account.notices', {'state': state, 'q': q}) }}
+  {% else %}
+    <p class="empty-line">{% if q or state != 'all' %}Nothing matches this filter.{% else %}No decisions yet. A published or returned piece will show up here.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

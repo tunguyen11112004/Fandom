@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_pager.html" import pager %}
+{% block title %}From your fandoms · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-cosplay auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <header class="desk-top">
+    <div>
+      <p class="kicker">Profile</p>
+      <h1>From your fandoms</h1>
+      <p>{{ total }} title{{ '' if total == 1 else 's' }} matched from your favorite and the categories you picked.</p>
+    </div>
+    <nav class="desk-actions" aria-label="Fandom list actions">
+      <a href="{{ url_for('account.profile') }}">Profile</a>
+      <a href="{{ url_for('account.profile_edit') }}">Edit profile</a>
+    </nav>
+  </header>
+
+  <form method="get" class="ticket-filters">
+    <label for="pick-category">Category
+      <select id="pick-category" name="category">
+        <option value="">All</option>
+        {% for row in categories %}
+          <option value="{{ row.slug }}" {% if category == row.slug %}selected{% endif %}>{{ row.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label for="pick-kind">Type
+      <select id="pick-kind" name="kind">
+        <option value="">All</option>
+        {% for row in kinds %}
+          <option value="{{ row }}" {% if kind == row %}selected{% endif %}>{{ row|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label for="pick-q">Search
+      <input id="pick-q" name="q" value="{{ q }}" placeholder="Title" />
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+
+  {% if picks %}
+    <ul class="desk-list">
+      {% for item in picks %}
+        <li>
+          <div class="row-title">
+            <a href="{{ url_for('main.content_detail', slug=item.slug) }}">{{ item.title }}</a>
+            <span class="chip">{{ item.category.name }}</span>
+            <span class="chip">{{ item.content_type|replace('_', ' ')|title }}</span>
+          </div>
+          {% if item.summary %}<p>{{ item.summary }}</p>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    {% set extra = {} %}
+    {% if category %}{% set _ = extra.update({'category': category}) %}{% endif %}
+    {% if kind %}{% set _ = extra.update({'kind': kind}) %}{% endif %}
+    {% if q %}{% set _ = extra.update({'q': q}) %}{% endif %}
+    {{ pager(page, pages, 'account.picks', extra) }}
+  {% else %}
+    <p class="empty-line">{% if q or category or kind %}Nothing matches this filter.{% else %}Choose a favorite fandom or a few categories on your profile.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

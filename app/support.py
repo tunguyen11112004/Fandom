@@ -128,8 +128,8 @@ def _faq(text):
         }
     if any(word in text for word in ("dashboard", "my desk", "member desk", "bookmark", "note")):
         return {
-            "text": "After you sign in, your name in the header opens your desk. It shows a greeting, what you opened recently, titles from your favorite fandom, and your bookmarks. On a title page, Bookmark saves it and you can leave a short note. Copy link shares the page.",
-            "links": [{"label": "Your desk", "href": "/dashboard"}, {"label": "Sign in", "href": "/login"}],
+            "text": "After you sign in, your name in the header opens Profile. It shows a greeting, what you opened recently, and titles from your favorite fandom. Bookmarks are on their own page. On a title page, Bookmark saves it and you can leave a short note. Copy link shares the page.",
+            "links": [{"label": "Profile", "href": "/profile"}, {"label": "Bookmarks", "href": "/bookmarks"}, {"label": "Sign in", "href": "/login"}],
         }
     if any(word in text for word in ("fan piece", "fan post", "submission", "submit", "send a piece")):
         return {

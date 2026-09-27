@@ -528,9 +528,9 @@ CREATE TRIGGER trg_bookmarks_one_target
 BEFORE INSERT ON bookmarks
 FOR EACH ROW
 BEGIN
-  IF (NEW.content_id IS NOT NULL) + (NEW.character_id IS NOT NULL) + (NEW.merchandise_id IS NOT NULL) <> 1 THEN
+  IF (NEW.content_id IS NOT NULL) + (NEW.character_id IS NOT NULL) + (NEW.merchandise_id IS NOT NULL) + (NEW.event_id IS NOT NULL) <> 1 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'A bookmark must reference exactly one of content, character or merchandise';
+      SET MESSAGE_TEXT = 'A bookmark must reference exactly one target';
   END IF;
 END$$
 DELIMITER ;
@@ -1948,9 +1948,9 @@ BEFORE UPDATE ON bookmarks
 FOR EACH ROW
 BEGIN
   IF (NEW.content_id IS NOT NULL) + (NEW.character_id IS NOT NULL) +
-     (NEW.merchandise_id IS NOT NULL) <> 1 THEN
+     (NEW.merchandise_id IS NOT NULL) + (NEW.event_id IS NOT NULL) <> 1 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'A bookmark must reference exactly one of content, character or merchandise';
+      SET MESSAGE_TEXT = 'A bookmark must reference exactly one target';
   END IF;
 END$$
 DELIMITER ;

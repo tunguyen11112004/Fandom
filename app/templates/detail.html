@@ -114,6 +114,9 @@
     {% if item.tags %}
       <p class="media-credit">Tags: {{ item.tags }}</p>
     {% endif %}
+    {% if item.content_type in ['video', 'trailer', 'explainer', 'audio', 'image'] %}
+      <p class="media-credit">If the player does not start, <a href="{{ url_for('account.feedback', kind='bug', page=request.path) }}">report this page</a>.</p>
+    {% endif %}
     <div class="body-copy">
       {% if (item.body or '').lstrip().startswith('<') %}
         {{ item.body|safe }}
@@ -156,8 +159,10 @@
         {% for other in related %}
           <li>
             <a class="content-card" href="{{ url_for('main.content_detail', slug=other.slug) }}">
-              {% if other.image_path %}
-                <img src="{{ url_for('static', filename='images/catalog/' + other.image_path) }}" alt="" />
+              {% if other.poster_url %}
+                <img src="{{ other.poster_url }}" alt="" />
+              {% elif other.image_path %}
+                <img src="{{ other.image_path|shot }}" alt="" />
               {% endif %}
               <div class="card-copy">
                 <span class="type">{{ other.content_type }}</span>

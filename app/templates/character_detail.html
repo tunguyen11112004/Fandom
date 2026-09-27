@@ -5,7 +5,7 @@
   <article class="dossier">
     {% if item.image_url %}
       <figure>
-        <img src="{{ url_for('static', filename='images/catalog/' + item.image_url) }}" alt="{{ item.name }}" />
+        <img src="{{ item.image_url|shot }}" alt="{{ item.name }}" />
       </figure>
     {% endif %}
     <div class="dossier-copy">
@@ -32,9 +32,11 @@
           <div class="rate-actions">
             <button type="submit" name="action" value="save">{{ 'Update bookmark' if saved else 'Bookmark' }}</button>
             {% if saved %}<button class="quiet" type="submit" name="action" value="remove">Remove</button>{% endif %}
+            <button type="button" class="quiet" id="copy-link">Copy link</button>
           </div>
         {% else %}
           <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a>
+          <button type="button" class="quiet" id="copy-link">Copy link</button>
         {% endif %}
       </form>
     </section>
@@ -47,8 +49,10 @@
         {% for other in related %}
           <li>
             <a class="content-card" href="{{ url_for('main.content_detail', slug=other.slug) }}">
-              {% if other.image_path %}
-                <img src="{{ url_for('static', filename='images/catalog/' + other.image_path) }}" alt="" />
+              {% if other.poster_url %}
+                <img src="{{ other.poster_url }}" alt="" />
+              {% elif other.image_path %}
+                <img src="{{ other.image_path|shot }}" alt="" />
               {% endif %}
               <div class="card-copy">
                 <span class="type">{{ other.content_type }}</span>

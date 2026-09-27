@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-map{% endblock %}
+{% block content %}
+  <article class="detail">
+    <header class="page-head">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="{{ url_for('main.events') }}">Events</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">{{ event.title }}</span>
+      </nav>
+      {% set type_label = {'convention': 'Convention', 'cosplay_meetup': 'Cosplay meetup', 'screening': 'Screening', 'premiere': 'Premiere', 'other': 'Other'} %}
+      <p class="kicker">{{ type_label.get(event.event_type, event.event_type) }}{% if category %} · {{ category.name }}{% endif %}</p>
+      <h1>{{ event.title }}</h1>
+      <p class="lede">{{ event.city }}{% if event.venue %} · {{ event.venue }}{% endif %}{% if event.address %} · {{ event.address }}{% endif %}</p>
+    </header>
+    <p><time>{{ event.start_at.strftime('%d %b %Y') }}</time>{% if event.end_at %} – <time>{{ event.end_at.strftime('%d %b %Y') }}</time>{% endif %}</p>
+    {% if event.description %}
+      <div class="body-copy">{{ event.description|rich }}</div>
+    {% endif %}
+    <div class="rate-actions">
+      {% if event.ticket_url %}
+        <a class="button" href="{{ event.ticket_url }}" target="_blank" rel="noreferrer">Tickets</a>
+      {% endif %}
+      <button type="button" class="quiet" id="copy-link">Copy link</button>
+    </div>
+    {% if current_user and current_user.is_member %}
+      <form class="rate-note" method="post" action="{{ url_for('account.bookmark_event', event_id=event.event_id) }}">
+        <input type="hidden" name="next" value="{{ request.path }}" />
+        <div class="rate-actions">
+          <button type="submit" name="action" value="save">{{ 'Saved' if saved else 'Bookmark this date' }}</button>
+          {% if saved %}<button class="quiet" type="submit" name="action" value="remove">Remove</button>{% endif %}
+        </div>
+      </form>
+    {% else %}
+      <p><a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a></p>
+    {% endif %}
+  </article>
+{% endblock %}

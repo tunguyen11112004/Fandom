@@ -16,12 +16,12 @@ from flask import (
     url_for,
 )
 from sqlalchemy import and_, func, or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 
 from .config import settings
 from .paging import page_of
 from .security import like_contains, utcnow
-from .emailer import send_reset_otp_email, send_verify_email
+from .emailer import send_moderation_email, send_reset_otp_email, send_verify_email
 from .extensions import db
 from .models import (
     ActivityLog,
@@ -43,6 +43,7 @@ from .models import (
     Tag,
     MerchandiseItem,
     MerchandiseTag,
+    ModerationLog,
     Notification,
     User,
     UserCategory,
@@ -224,7 +225,7 @@ def login():
         else:
             _begin_session(user)
             _toast("Signed in.")
-            nxt = _safe_next(request.form.get("next") or request.args.get("next"), url_for("main.home"))
+            nxt = _safe_next(request.form.get("next") or request.args.get("next"), _member_home(user))
             return redirect(nxt)
     return render_template("auth/login.html", error=error, email=email)
 
@@ -385,9 +386,13 @@ def _admin():
 
 
 def _admin_entry():
-    if current_user() is not None:
+    user = current_user()
+    if user is not None and user.role == "admin":
+        return redirect(url_for("account.admin_home", tab="dashboard"))
+    if user is not None:
+        session["notice"] = "That area is only for an administrator."
         return redirect(url_for("main.home"))
-    return redirect(url_for("account.login", next="/admin"))
+    return redirect(url_for("account.admin_login"))
 
 
 def _log_activity(user, kind, summary, href=""):
@@ -401,6 +406,33 @@ def _log_activity(user, kind, summary, href=""):
     )
 
 
+def _tell_author(admin, row, action, reason=""):
+    db.session.add(
+        ModerationLog(
+            submission_id=row.submission_id,
+            admin_id=admin.user_id,
+            action=action[:20],
+            reason=(reason or None),
+        )
+    )
+    if action == "approve":
+        title = "Your piece was published"
+        body = f"“{row.title}” is now on the shelves."
+        decision = "approved"
+    else:
+        title = "Your piece needs a revision"
+        body = reason or "Needs a revision."
+        decision = "rejected"
+    db.session.add(Notification(user_id=row.user_id, title=title, body=body[:2000]))
+    owner = db.session.get(User, row.user_id)
+    if owner is None:
+        return
+    try:
+        send_moderation_email(owner.email, row.title, decision, reason or None)
+    except Exception:
+        current_app.logger.exception("moderation email failed")
+
+
 def _admin_log(admin, action, detail):
     db.session.add(
         ActivityLog(
@@ -409,6 +441,40 @@ def _admin_log(admin, action, detail):
             entity_type="admin",
             details=(detail or "")[:255],
         )
+    )
+
+
+def _member_home(user):
+    ready = bool((user.favorite or "").strip()) or bool(_interest_slugs(user))
+    if not ready:
+        ready = UserFandom.query.filter_by(user_id=user.user_id).first() is not None
+    return url_for("account.profile" if ready else "account.profile_edit")
+
+
+def _matched_titles(user):
+    published = Content.query.filter(Content.status == "published")
+    if (user.favorite or "").strip():
+        favored = (
+            published.filter(Content.title.ilike(like_contains(user.favorite)))
+            .order_by(Content.created_at.desc())
+            .all()
+        )
+        if favored:
+            return favored
+    slugs = _interest_slugs(user)
+    fan_ids = [row.fandom_id for row in UserFandom.query.filter_by(user_id=user.user_id)]
+    if not slugs and not fan_ids:
+        return []
+    clauses = []
+    if slugs:
+        clauses.append(Category.slug.in_(slugs))
+    if fan_ids:
+        clauses.append(Content.fandom_id.in_(fan_ids))
+    return (
+        published.join(Category)
+        .filter(or_(*clauses))
+        .order_by(Content.created_at.desc())
+        .all()
     )
 
 
@@ -442,8 +508,8 @@ def _slugify(title, ignore_id=None):
         number += 1
 
 
-@bp.route("/dashboard")
-def dashboard():
+@bp.route("/profile")
+def profile():
     user = _member()
     if user is None:
         return redirect(url_for("account.login", next=request.path))
@@ -451,58 +517,177 @@ def dashboard():
     if kind == "merchandise":
         kept = request.args.to_dict(flat=True)
         kept["kind"] = "merch"
-        return redirect(url_for("account.dashboard", **kept))
-    bookmarks = (
+        return redirect(url_for("account.bookmarks", **kept))
+    if kind:
+        return redirect(url_for("account.bookmarks", kind=kind))
+    bookmark_count = Bookmark.query.filter_by(user_id=user.user_id).count()
+    recent_bookmarks = (
         Bookmark.query.filter_by(user_id=user.user_id)
         .order_by(Bookmark.created_at.desc())
+        .limit(5)
         .all()
     )
-    if kind == "character":
-        bookmarks = [row for row in bookmarks if row.character_id]
-    elif kind == "merch":
-        bookmarks = [row for row in bookmarks if row.merchandise_id]
-    elif kind:
-        bookmarks = [row for row in bookmarks if row.content and row.content.content_type == kind]
     activity = (
         ActivityLog.query.filter_by(user_id=user.user_id)
         .order_by(ActivityLog.log_id.desc())
         .limit(8)
         .all()
     )
-    picks = []
-    if user.favorite:
-        picks = (
-            Content.query.filter(
-                Content.status == "published",
-                Content.title.ilike(like_contains(user.favorite)),
-            )
-            .order_by(Content.popularity_score.desc())
-            .limit(4)
-            .all()
-        )
-    chosen_slugs = _interest_slugs(user)
-    if not picks and chosen_slugs:
-        picks = (
-            Content.query.join(Category)
-            .filter(Content.status == "published", Category.slug.in_(chosen_slugs))
-            .order_by(Content.popularity_score.desc())
-            .limit(4)
-            .all()
-        )
-    bookmarks, page, pages, _ = page_of(bookmarks, 8)
+    matched = _matched_titles(user)
     sent_count = FanSubmission.query.filter_by(user_id=user.user_id).count()
+    recent_sent = (
+        FanSubmission.query.filter_by(user_id=user.user_id)
+        .order_by(FanSubmission.submission_id.desc())
+        .limit(5)
+        .all()
+    )
+    notice_count = Notification.query.filter_by(user_id=user.user_id).count()
+    notices = (
+        Notification.query.filter_by(user_id=user.user_id)
+        .order_by(Notification.notification_id.desc())
+        .limit(5)
+        .all()
+    )
     return render_template(
         "auth/dashboard.html",
         user=user,
-        bookmarks=bookmarks,
-        page=page,
-        pages=pages,
+        bookmark_count=bookmark_count,
+        recent_bookmarks=recent_bookmarks,
         activity=activity,
-        picks=picks,
+        picks=matched[:5],
+        pick_count=len(matched),
         sent_count=sent_count,
-        kind=kind,
+        recent_sent=recent_sent,
+        notices=notices,
+        notice_count=notice_count,
         categories=Category.query.order_by(Category.category_id).all(),
     )
+
+
+@bp.route("/dashboard")
+def dashboard():
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next="/profile"))
+    kind = request.args.get("kind", "").strip()
+    if kind == "merchandise":
+        kept = request.args.to_dict(flat=True)
+        kept["kind"] = "merch"
+        return redirect(url_for("account.bookmarks", **kept))
+    if kind:
+        return redirect(url_for("account.bookmarks", kind=kind))
+    return redirect(url_for("account.profile"))
+
+
+@bp.route("/bookmarks")
+def bookmarks():
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next=request.path))
+    kind = request.args.get("kind", "").strip()
+    if kind == "merchandise":
+        return redirect(url_for("account.bookmarks", kind="merch"))
+    rows = Bookmark.query.filter_by(user_id=user.user_id).order_by(Bookmark.created_at.desc()).all()
+    if kind == "character":
+        rows = [row for row in rows if row.character_id]
+    elif kind == "merch":
+        rows = [row for row in rows if row.merchandise_id]
+    elif kind == "event":
+        rows = [row for row in rows if row.event_id]
+    elif kind == "video":
+        rows = [row for row in rows if row.content and row.content.content_type in {"video", "trailer", "explainer"}]
+    elif kind == "article":
+        rows = [row for row in rows if row.content and row.content.content_type == "article"]
+    elif kind:
+        rows = []
+    rows, page, pages, _ = page_of(rows, 8)
+    return render_template(
+        "auth/bookmarks.html",
+        user=user,
+        bookmarks=rows,
+        page=page,
+        pages=pages,
+        kind=kind,
+    )
+
+
+@bp.route("/notices")
+def notices():
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next=request.path))
+    state = request.args.get("state", "all")
+    if state not in {"all", "unread", "read"}:
+        state = "all"
+    q = " ".join(request.args.get("q", "").split())[:80]
+    query = Notification.query.filter_by(user_id=user.user_id)
+    if state == "unread":
+        query = query.filter(Notification.is_read.is_(False))
+    elif state == "read":
+        query = query.filter(Notification.is_read.is_(True))
+    if q:
+        query = query.filter(Notification.title.like(like_contains(q)))
+    rows, page, pages, total = page_of(query.order_by(Notification.notification_id.desc()).all(), 8)
+    return render_template(
+        "auth/notices.html",
+        user=user,
+        notices=rows,
+        page=page,
+        pages=pages,
+        total=total,
+        state=state,
+        q=q,
+    )
+
+
+@bp.route("/for-you")
+def picks():
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next=request.path))
+    matched = _matched_titles(user)
+    category = request.args.get("category", "").strip()
+    kind = request.args.get("kind", "").strip()
+    q = " ".join(request.args.get("q", "").split())[:80]
+    categories = sorted({item.category for item in matched if item.category}, key=lambda row: row.name.lower())
+    kinds = sorted({item.content_type for item in matched})
+    rows = matched
+    if category:
+        rows = [item for item in rows if item.category and item.category.slug == category]
+    if kind:
+        rows = [item for item in rows if item.content_type == kind]
+    if q:
+        needle = q.lower()
+        rows = [item for item in rows if needle in item.title.lower()]
+    rows, page, pages, total = page_of(rows, 8)
+    return render_template(
+        "auth/picks.html",
+        user=user,
+        picks=rows,
+        page=page,
+        pages=pages,
+        total=total,
+        category=category,
+        kind=kind,
+        q=q,
+        categories=categories,
+        kinds=kinds,
+    )
+
+
+@bp.route("/notifications/<int:notification_id>/read", methods=["POST"])
+def read_notice(notification_id):
+    user = _member()
+    if user is None:
+        return redirect(url_for("account.login", next="/notices"))
+    row = db.session.get(Notification, notification_id)
+    if row is not None and row.user_id == user.user_id:
+        row.is_read = True
+        db.session.commit()
+    nxt = request.form.get("next") or url_for("account.profile")
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        nxt = url_for("account.profile")
+    return redirect(nxt)
 
 
 @bp.route("/my-pieces")
@@ -564,8 +749,8 @@ def delete_sent_piece(submission_id):
     return redirect(url_for("account.sent_pieces", **kept))
 
 
-@bp.route("/profile", methods=["GET", "POST"])
-def profile():
+@bp.route("/profile/edit", methods=["GET", "POST"])
+def profile_edit():
     user = current_user()
     if user is None:
         return redirect(url_for("account.login", next=request.path))
@@ -600,7 +785,7 @@ def profile():
                     handle.write(blob)
                 user.avatar_path = f"uploads/avatars/{filename}"
         if error is None:
-            _log_activity(user, "profile", "Updated profile and display preferences", "/profile")
+            _log_activity(user, "profile", "Updated profile and display preferences", "/profile/edit")
             db.session.commit()
             _toast("Profile saved.")
             return redirect(url_for("account.profile"))
@@ -666,7 +851,7 @@ def bookmark(slug):
     db.session.commit()
     nxt = request.form.get("next") or url_for("main.content_detail", slug=slug)
     if not nxt.startswith("/"):
-        nxt = url_for("account.dashboard")
+        nxt = url_for("account.profile")
     _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
     return redirect(nxt)
 
@@ -741,6 +926,9 @@ def bookmark_character(character_id):
         action=action,
     )
     _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+        return redirect(nxt)
     return redirect(url_for("main.character_detail", character_id=character_id))
 
 
@@ -759,6 +947,9 @@ def bookmark_merchandise(item_id):
         action=action,
     )
     _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+        return redirect(nxt)
     return redirect(url_for("main.merchandise_detail", item_id=item_id))
 
 
@@ -774,6 +965,9 @@ def bookmark_event(event_id):
     action = request.form.get("action", "save")
     _toggle_bookmark(user, event_id=event_id, action=action)
     _toast("Bookmark removed." if action == "remove" else "Bookmark saved.")
+    nxt = request.form.get("next") or ""
+    if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+        return redirect(nxt)
     return redirect(url_for("main.events") + f"#{event_id}")
 
 
@@ -915,25 +1109,32 @@ def submissions():
         media_url = request.form.get("media_url", "").strip()
         rights = request.form.get("rights") == "yes"
         category = db.session.get(Category, int(category_id)) if category_id.isdigit() else None
-        file_types = {"video": {".mp4", ".webm"}, "audio": {".mp3", ".wav", ".m4a", ".ogg"}}
+        file_types = {
+            "image": IMAGE_EXTS,
+            "video": {".mp4", ".webm"},
+            "audio": {".mp3", ".wav", ".m4a", ".ogg"},
+        }
         uploaded, upload_error = (None, None)
         if content_type in file_types:
             uploaded, upload_error = _save_media_file(request.files.get("media_file"), file_types[content_type])
+        cover_file, cover_error = _save_media_file(request.files.get("cover_file"), IMAGE_EXTS)
+        if cover_file:
+            cover = cover_file
         raw_fandom = request.form.get("fandom_id", "").strip()
         fan = db.session.get(Fandom, int(raw_fandom)) if raw_fandom.isdigit() else None
-        if not title or not summary or not genre or not _plain_text(body) or category is None or fan is None:
-            error = "Title, summary, category, fandom, genre, and the story itself are required."
-        elif not year.isdigit() or not 1900 <= int(year) <= 2100:
-            error = "Release year needs four digits, from 1900 to 2100."
-        elif fan.category_id != category.category_id or not fan.is_active:
+        if not title or not _plain_text(body) or category is None:
+            error = "Title, category, and the story itself are required. The other fields can stay empty."
+        elif year and (not year.isdigit() or not 1900 <= int(year) <= 2100):
+            error = "Release year needs four digits, from 1900 to 2100, or leave it empty."
+        elif fan is not None and (fan.category_id != category.category_id or not fan.is_active):
             error = "Choose an active fandom in that category."
         elif content_type not in {"article", "video", "audio", "image", "profile"}:
             error = "Pick a content type from the list."
-        elif upload_error:
-            error = upload_error
-        elif media_url and not media_url.startswith(("http://", "https://")):
+        elif upload_error or cover_error:
+            error = upload_error or cover_error
+        elif media_url and not media_url.startswith(("http://", "https://", "/static/")):
             error = "Media links need to start with http:// or https://."
-        elif cover and not cover.startswith(("http://", "https://")):
+        elif cover and not cover.startswith(("http://", "https://", "/static/")):
             error = "The cover link needs to start with http:// or https://."
         elif source_url and not source_url.startswith(("http://", "https://")):
             error = "The source link needs to start with http:// or https://."
@@ -962,12 +1163,12 @@ def submissions():
                     error = f"You can edit a piece once every 5 minutes. Try again in {wait}."
             if error is None and row is not None:
                 row.category_id = category.category_id
-                row.fandom_id = fan.fandom_id
+                row.fandom_id = fan.fandom_id if fan else None
                 row.title = title[:200]
-                row.summary = summary[:500]
-                row.genre = genre[:60]
-                row.tags = tags[:255]
-                row.release_year = int(year)
+                row.summary = summary[:500] or None
+                row.genre = genre[:60] or None
+                row.tags = tags[:255] or None
+                row.release_year = int(year) if year.isdigit() else None
                 row.timeline_text = timeline or None
                 row.cover_image_url = cover[:500] or None
                 row.source_name = source_name[:150] or None
@@ -1009,44 +1210,96 @@ def submissions():
 @bp.route("/feedback", methods=["GET", "POST"])
 def feedback():
     user = current_user()
-    error = None
     sent = request.args.get("sent") == "1"
+    preset_kind = request.args.get("kind", "")
+    preset_page = request.args.get("page", "")
+    if preset_kind not in {"bug", "suggestion", "query"}:
+        preset_kind = ""
     if request.method == "POST":
         kind = request.form.get("kind", "")
-        message = _clean_html(request.form.get("message", "").strip())
+        message = request.form.get("message", "").strip()
         email = request.form.get("email", "").strip().lower()
         page_url = request.form.get("page_url", "").strip()
         steps = request.form.get("steps", "").strip()
+        preset_kind = kind if kind in {"bug", "suggestion", "query"} else preset_kind
+        preset_page = page_url or preset_page
+        errors = {}
         if kind not in {"bug", "suggestion", "query"}:
-            error = "Choose bug, suggestion, or question."
-        elif not _plain_text(message):
-            error = "Write the feedback before sending it."
-        elif user is None and "@" not in email:
-            error = "Guests need an email so the desk can reply."
-        elif kind == "bug" and not steps:
-            error = "A bug report needs the steps that show it again."
-        else:
-            row = Feedback(
-                user_id=user.user_id if user else None,
-                contact_email=user.email if user else email,
-                type=kind,
-                subject=kind.capitalize(),
-                page_url=page_url[:300] or None,
-                reproduction_steps=steps or None,
-                message=message,
+            errors["kind"] = "Choose bug, suggestion, or question."
+        if not _plain_text(message):
+            errors["message"] = "Write the feedback before sending it."
+        if user is None and "@" not in email:
+            errors["email"] = "Guests need an email so the desk can reply."
+        if kind == "bug" and not steps:
+            errors["steps"] = "A bug report needs the steps that show it again."
+        if errors:
+            return render_template(
+                "auth/feedback.html",
+                user=user,
+                errors=errors,
+                sent=False,
+                preset_kind=preset_kind,
+                preset_page=preset_page,
+                preset_message=message,
+                preset_email=email,
+                preset_steps=steps,
             )
-            db.session.add(row)
-            if user and user.is_member:
-                _log_activity(user, "feedback", f"Sent a {kind}", "/feedback")
-            db.session.commit()
-            _toast("Feedback sent.")
-            return redirect(url_for("account.feedback"))
-    return render_template("auth/feedback.html", user=user, error=error, sent=sent)
+        row = Feedback(
+            user_id=user.user_id if user else None,
+            contact_email=user.email if user else email,
+            type=kind,
+            subject=kind.capitalize(),
+            page_url=page_url[:300] or None,
+            reproduction_steps=steps or None,
+            message=_clean_html(message),
+        )
+        db.session.add(row)
+        if user and user.is_member:
+            _log_activity(user, "feedback", f"Sent a {kind}", "/feedback")
+        db.session.commit()
+        _toast("Feedback sent.")
+        return redirect(url_for("account.feedback"))
+    return render_template(
+        "auth/feedback.html",
+        user=user,
+        errors={},
+        sent=sent,
+        preset_kind=preset_kind,
+        preset_page=preset_page,
+        preset_message="",
+        preset_email="",
+        preset_steps="",
+    )
 
 
 @bp.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
-    return _admin_entry()
+    sitting = current_user()
+    if sitting is not None and sitting.role == "admin":
+        return redirect(url_for("account.admin_home", tab="dashboard"))
+    error = None
+    email = ""
+    if sitting is not None:
+        error = "Sign out of the member account before using the admin gate."
+    elif request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = User.query.filter_by(email=email).first() if _valid_email(email) else None
+        if not _valid_email(email):
+            error = "Enter a valid email address."
+        elif user is None or not verify_password(password, user.password_hash):
+            error = "Email or password is not right."
+        elif user.locked:
+            error = "This account is locked."
+        elif user.role != "admin":
+            error = "This gate is only for an administrator."
+        elif not user.verified:
+            error = "Your email is not verified yet."
+        else:
+            _begin_session(user)
+            _toast("Signed in.")
+            return redirect(url_for("account.admin_home", tab="dashboard"))
+    return render_template("auth/admin_login.html", error=error, email=email)
 
 
 def _dash_range():
@@ -1277,13 +1530,75 @@ def admin_home():
         catalog_page = int(raw_page) if raw_page.isdigit() and int(raw_page) > 0 else 1
         catalog_page = min(catalog_page, catalog_pages)
         titles = title_query.order_by(Content.title).offset((catalog_page - 1) * 8).limit(8).all()
+    list_q = " ".join(request.args.get("q", "").split())[:80]
+    list_category = request.args.get("category", "").strip()
+    list_state = request.args.get("state", "").strip()
+    list_fandom = request.args.get("fandom", "").strip()
+    list_kind = request.args.get("kind", "").strip()
+    needle = list_q.lower()
+    shelf_categories = Category.query.order_by(Category.category_id).all()
+    category_ids = {row.slug: row.category_id for row in shelf_categories}
+    category_rows = shelf_categories
+    if tab == "categories" and needle:
+        category_rows = [
+            row for row in shelf_categories
+            if needle in row.name.lower() or needle in (row.description or "").lower()
+        ]
     needs_fandoms = tab in {"catalog", "fandoms", "characters", "merch", "events"}
     fandom_rows = Fandom.query.order_by(Fandom.name).all() if needs_fandoms else []
     character_rows = CharacterProfile.query.order_by(CharacterProfile.name).all() if tab == "characters" else []
     merch_rows = MerchandiseItem.query.order_by(MerchandiseItem.name).all() if tab == "merch" else []
     event_rows = Event.query.order_by(Event.start_at.desc()).all() if tab == "events" else []
+    event_cities = sorted({row.city for row in event_rows if row.city})
     tag_rows = Tag.query.order_by(Tag.name).all() if tab in {"tags", "merch"} else []
     faq_rows = ChatbotFaq.query.order_by(ChatbotFaq.faq_id.desc()).all() if tab == "faq" else []
+    if tab == "fandoms":
+        if needle:
+            fandom_rows_shown = [row for row in fandom_rows if needle in row.name.lower()]
+        else:
+            fandom_rows_shown = list(fandom_rows)
+        if list_category in category_ids:
+            fandom_rows_shown = [row for row in fandom_rows_shown if row.category_id == category_ids[list_category]]
+        if list_state == "active":
+            fandom_rows_shown = [row for row in fandom_rows_shown if row.is_active]
+        elif list_state == "hidden":
+            fandom_rows_shown = [row for row in fandom_rows_shown if not row.is_active]
+    else:
+        fandom_rows_shown = fandom_rows
+    if tab == "characters":
+        if needle:
+            character_rows = [row for row in character_rows if needle in row.name.lower() or needle in (row.alias or "").lower()]
+        if list_category in category_ids:
+            character_rows = [row for row in character_rows if row.category_id == category_ids[list_category]]
+        if list_fandom.isdigit():
+            character_rows = [row for row in character_rows if row.fandom_id == int(list_fandom)]
+    if tab == "merch":
+        if needle:
+            merch_rows = [row for row in merch_rows if needle in row.name.lower()]
+        if list_category in category_ids:
+            merch_rows = [row for row in merch_rows if row.category_id == category_ids[list_category]]
+        if list_state == "upcoming":
+            merch_rows = [row for row in merch_rows if row.is_upcoming]
+        elif list_state == "released":
+            merch_rows = [row for row in merch_rows if not row.is_upcoming]
+    if tab == "events":
+        if needle:
+            event_rows = [row for row in event_rows if needle in row.title.lower() or needle in (row.city or "").lower()]
+        if list_kind in {"convention", "cosplay_meetup", "screening", "premiere", "other"}:
+            event_rows = [row for row in event_rows if row.event_type == list_kind]
+        if list_state:
+            event_rows = [row for row in event_rows if row.city == list_state]
+    if tab == "tags" and needle:
+        tag_rows = [row for row in tag_rows if needle in row.name.lower()]
+    if tab == "faq":
+        if needle:
+            faq_rows = [row for row in faq_rows if needle in row.question.lower() or needle in (row.keywords or "").lower()]
+        if list_state == "active":
+            faq_rows = [row for row in faq_rows if row.is_active]
+        elif list_state == "hidden":
+            faq_rows = [row for row in faq_rows if not row.is_active]
+    if tab == "members" and list_state in {"locked", "open"}:
+        members = [row for row in members if row.locked == (list_state == "locked")]
     pending_rows = FanSubmission.query.filter_by(status="pending").order_by(FanSubmission.submission_id.asc()).all()
     queue_total = len(pending_rows)
     queue = pending_rows
@@ -1304,11 +1619,15 @@ def admin_home():
             )
         queue = queue_query.order_by(FanSubmission.submission_id.desc()).all()
     feedback_rows = _feedback_rows()
-    logs = ActivityLog.query.filter_by(entity_type="admin").order_by(ActivityLog.log_id.desc()).limit(80).all()
+    log_query = ActivityLog.query.filter_by(entity_type="admin")
+    if tab == "record" and list_q:
+        like = like_contains(list_q)
+        log_query = log_query.filter(or_(ActivityLog.action.ilike(like), ActivityLog.details.ilike(like)))
+    logs = log_query.order_by(ActivityLog.log_id.desc()).all() if tab == "record" else []
     desk_page, desk_pages = 1, 1
-    fandom_table = fandom_rows
+    fandom_table = fandom_rows_shown
     if tab == "fandoms":
-        fandom_table, desk_page, desk_pages, _ = page_of(fandom_rows, 8)
+        fandom_table, desk_page, desk_pages, _ = page_of(fandom_rows_shown, 8)
     elif tab == "characters":
         character_rows, desk_page, desk_pages, _ = page_of(character_rows, 8)
     elif tab == "merch":
@@ -1361,12 +1680,16 @@ def admin_home():
         merch_rows=merch_rows,
         merch_tag_map=_merch_tag_map() if tab == "merch" else {},
         event_rows=event_rows,
+        event_cities=event_cities,
+        category_rows=category_rows,
+        event_draft=session.pop("event_draft", None) if tab == "events" else None,
+        event_errors=session.pop("event_errors", None) if tab == "events" else None,
         tag_rows=tag_rows,
         faq_rows=faq_rows,
         missed_questions=_missed_questions() if tab == "faq" else [],
         viewed_titles=Content.query.order_by(Content.view_count.desc()).limit(5).all() if tab == "dashboard" else [],
         viewed_merch=MerchandiseItem.query.order_by(MerchandiseItem.view_count.desc()).limit(5).all() if tab == "dashboard" else [],
-        categories=Category.query.order_by(Category.category_id).all(),
+        categories=shelf_categories,
         category_usage=_category_usage() if tab == "categories" else {},
         error=request.args.get("error", ""),
         focus=request.args.get("focus", ""),
@@ -1391,6 +1714,11 @@ def admin_home():
             .all()
         ),
         query=q,
+        list_q=list_q,
+        list_category=list_category,
+        list_state=list_state,
+        list_fandom=list_fandom,
+        list_kind=list_kind,
         kinds=request.args.get("kind", ""),
         states=request.args.get("status", ""),
         open_feedback=Feedback.query.filter(Feedback.status.in_(["new", "in_progress"])).count(),
@@ -1412,7 +1740,14 @@ def _feedback_rows():
     mapped = {"reviewing": "in_progress", "done": "resolved"}.get(status, status)
     if mapped in {"new", "in_progress", "resolved", "closed"}:
         query = query.filter_by(status=mapped)
+    text = " ".join(request.args.get("q", "").split())[:80]
+    if text:
+        like = like_contains(text)
+        query = query.filter(or_(Feedback.subject.ilike(like), Feedback.message.ilike(like), Feedback.contact_email.ilike(like)))
     return query.order_by(Feedback.feedback_id.desc()).all()
+
+
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 def _save_media_file(upload, allowed=None):
@@ -1426,13 +1761,30 @@ def _save_media_file(upload, allowed=None):
     upload.seek(0, os.SEEK_END)
     size = upload.tell()
     upload.seek(0)
-    if size > 30 * 1024 * 1024:
-        return None, "Media files must be 30 MB or smaller."
+    limit = 8 * 1024 * 1024 if ext in IMAGE_EXTS else 30 * 1024 * 1024
+    if size > limit:
+        return None, "Images must be 8 MB or smaller." if ext in IMAGE_EXTS else "Media files must be 30 MB or smaller."
     folder = os.path.join(current_app.static_folder, "uploads", "media")
     os.makedirs(folder, exist_ok=True)
     filename = f"{secrets.token_hex(16)}{ext}"
     upload.save(os.path.join(folder, filename))
     return f"/static/uploads/media/{filename}", None
+
+
+def _stored_image(value, upload, label="Image"):
+    saved, error = _save_media_file(upload, IMAGE_EXTS)
+    if error:
+        return None, error
+    if saved:
+        return saved, None
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    if text.startswith(("http://", "https://", "/static/")) or re.fullmatch(r"[\w.-]+\.(?:png|jpe?g|webp|gif)", text, re.I):
+        if len(text) > 500:
+            return None, f"{label} must be 500 characters or fewer."
+        return text, None
+    return None, f"{label} must start with http:// or https://, or upload a file."
 
 
 def _apply_media(item, content_type, embed, uploaded):
@@ -1446,14 +1798,20 @@ def _apply_media(item, content_type, embed, uploaded):
     if uploaded:
         item.embed_url = uploaded
         item.media_url = uploaded
+        if content_type == "image":
+            item.thumbnail_url = uploaded
         return None
     if embed:
         item.embed_url = embed[:500]
         item.media_url = embed[:500]
+        if content_type == "image":
+            item.thumbnail_url = embed[:500]
         return None
     existing = item.embed_url if item.embed_url and item.embed_url != "None" else None
     if existing:
         item.embed_url = existing
+        if content_type == "image":
+            item.thumbnail_url = existing
         return None
     if needs_media:
         return "Add a YouTube link or upload a video or audio file."
@@ -1485,11 +1843,20 @@ def _content_from_form(item):
     tags = request.form.get("tags", "").strip()
     source_name = " ".join(request.form.get("source_name", "").split())[:150]
     source_url = request.form.get("source_url", "").strip()
-    if not title or category is None or not genre or not summary or not _plain_text(body) or not year.isdigit():
-        return "Title, category, genre, year, summary, and body are required."
+    if not title or category is None:
+        return "Title and category are required. The other fields can stay empty."
+    if year and (not year.isdigit() or not 1900 <= int(year) <= 2100):
+        return "Year needs four digits, from 1900 to 2100, or leave it empty."
     if content_type not in {"article", "video", "audio", "image", "trailer", "explainer"}:
         content_type = "article"
-    uploaded, upload_error = _save_media_file(request.files.get("media_file"))
+    file_sets = {
+        "image": IMAGE_EXTS,
+        "video": {".mp4", ".webm"},
+        "trailer": {".mp4", ".webm"},
+        "explainer": {".mp4", ".webm"},
+        "audio": {".mp3", ".wav", ".m4a", ".ogg"},
+    }
+    uploaded, upload_error = _save_media_file(request.files.get("media_file"), file_sets.get(content_type))
     if upload_error:
         return upload_error
     if embed and not embed.startswith(("http://", "https://")):
@@ -1507,9 +1874,9 @@ def _content_from_form(item):
     if request.form.get("retitle") == "yes":
         item.slug = _slugify(title, item.content_id)
     item.content_type = content_type
-    item.release_year = int(year)
-    item.summary = summary[:500]
-    item.body = body
+    item.release_year = int(year) if year.isdigit() else None
+    item.summary = summary[:500] or None
+    item.body = body or None
     media_error = _apply_media(item, content_type, embed, uploaded)
     if media_error:
         return media_error
@@ -1522,12 +1889,13 @@ def _content_from_form(item):
     db.session.add(item)
     db.session.flush()
     ContentGenre.query.filter_by(content_id=item.content_id).delete()
-    named = Genre.query.filter_by(name=genre[:60]).first()
-    if named is None:
-        named = Genre(name=genre[:60])
-        db.session.add(named)
-        db.session.flush()
-    db.session.add(ContentGenre(content_id=item.content_id, genre_id=named.genre_id))
+    if genre:
+        named = Genre.query.filter_by(name=genre[:60]).first()
+        if named is None:
+            named = Genre(name=genre[:60])
+            db.session.add(named)
+            db.session.flush()
+        db.session.add(ContentGenre(content_id=item.content_id, genre_id=named.genre_id))
     if "tags" in request.form:
         item.tags = tags
     _sync_timeline(item)
@@ -1740,7 +2108,8 @@ def admin_category_create():
         return _admin_entry()
     name = request.form.get("name", "")
     description = request.form.get("description", "")
-    error = _validate_category(name, description)
+    cover, cover_error = _stored_image(request.form.get("cover_url"), request.files.get("cover_file"), "Cover")
+    error = _validate_category(name, description) or cover_error
     if error:
         return _category_redirect(error, name=name.strip(), description=description.strip())
     clean = " ".join(name.split())
@@ -1749,6 +2118,7 @@ def admin_category_create():
         name=clean,
         slug=_category_slug(clean),
         description=stored,
+        cover_url=cover,
     )
     db.session.add(row)
     _admin_log(user, "category.create", clean)
@@ -1766,12 +2136,14 @@ def admin_category(category_id):
         return _category_redirect("That category no longer exists.")
     name = request.form.get("name", "")
     description = request.form.get("description", "")
-    error = _validate_category(name, description, ignore_id=category.category_id)
+    cover, cover_error = _stored_image(request.form.get("cover_url"), request.files.get("cover_file"), "Cover")
+    error = _validate_category(name, description, ignore_id=category.category_id) or cover_error
     if error:
         return _category_redirect(error, focus=category_id, name=name.strip(), description=description.strip())
     category.name = " ".join(name.split())
     stored, _ = _rich_text(description, 500, "Description")
     category.description = stored
+    category.cover_url = cover
     _admin_log(user, "category.edit", category.name)
     db.session.commit()
     return _category_redirect()
@@ -1995,7 +2367,7 @@ def admin_character_create():
     name, error = _clean_name(request.form.get("name"), 2, 150, "Character name")
     alias, alias_error = _optional_text(request.form.get("alias"), 150, "Alias")
     bio, bio_error = _rich_text(request.form.get("bio"), 2000, "Bio")
-    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    image, image_error = _stored_image(request.form.get("image_url"), request.files.get("image_file"))
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     if any((error, alias_error, bio_error, image_error)):
         return _desk_redirect("characters", error or alias_error or bio_error or image_error)
@@ -2028,7 +2400,7 @@ def admin_character_update(character_id):
     name, error = _clean_name(request.form.get("name"), 2, 150, "Character name")
     alias, alias_error = _optional_text(request.form.get("alias"), 150, "Alias")
     bio, bio_error = _rich_text(request.form.get("bio"), 2000, "Bio")
-    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    image, image_error = _stored_image(request.form.get("image_url"), request.files.get("image_file"))
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     if any((error, alias_error, bio_error, image_error)):
         return _desk_redirect("characters", error or alias_error or bio_error or image_error, character_id)
@@ -2048,6 +2420,18 @@ def admin_character_update(character_id):
     return _desk_redirect("characters")
 
 
+def _attach_merch_photos(item):
+    order = len(item.images or [])
+    for upload in request.files.getlist("extra_images"):
+        saved, error = _save_media_file(upload, IMAGE_EXTS)
+        if error:
+            return error
+        if saved:
+            db.session.add(MerchandiseImage(item_id=item.item_id, image_url=saved, sort_order=order))
+            order += 1
+    return None
+
+
 def _merch_tags(item):
     MerchandiseTag.query.filter_by(item_id=item.item_id).delete()
     for raw in request.form.getlist("tags"):
@@ -2064,7 +2448,7 @@ def admin_merch_create():
         return bounce
     name, error = _clean_name(request.form.get("name"), 2, 200, "Merchandise name")
     description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
-    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    image, image_error = _stored_image(request.form.get("image_url"), request.files.get("image_file"))
     reference, ref_error = _optional_url(request.form.get("reference_url"), "Reference link")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     release, release_error = _optional_date(request.form.get("release_date"))
@@ -2087,6 +2471,10 @@ def admin_merch_create():
     )
     db.session.add(row)
     db.session.flush()
+    photo_error = _attach_merch_photos(row)
+    if photo_error:
+        db.session.rollback()
+        return _desk_redirect("merch", photo_error)
     _merch_tags(row)
     _admin_log(user, "merch.create", name)
     db.session.commit()
@@ -2109,7 +2497,7 @@ def admin_merch_update(item_id):
         return _desk_redirect("merch", notice="Removed.")
     name, error = _clean_name(request.form.get("name"), 2, 200, "Merchandise name")
     description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
-    image, image_error = _optional_url(request.form.get("image_url"), "Image link")
+    image, image_error = _stored_image(request.form.get("image_url"), request.files.get("image_file"))
     reference, ref_error = _optional_url(request.form.get("reference_url"), "Reference link")
     category = db.session.get(Category, int(request.form.get("category_id", "0") or 0))
     release, release_error = _optional_date(request.form.get("release_date"))
@@ -2128,6 +2516,10 @@ def admin_merch_update(item_id):
     row.fandom_id = fan.fandom_id if fan else None
     row.release_date = release
     row.is_upcoming = request.form.get("upcoming") == "yes"
+    photo_error = _attach_merch_photos(row)
+    if photo_error:
+        db.session.rollback()
+        return _desk_redirect("merch", photo_error, item_id)
     _merch_tags(row)
     _admin_log(user, "merch.edit", name)
     db.session.commit()
@@ -2177,15 +2569,43 @@ def _coord(value, low, high, label):
     return number, None
 
 
-EVENT_TYPES = ("convention", "concert", "meetup", "festival", "expo", "other")
+EVENT_TYPES = (
+    ("convention", "Convention"),
+    ("cosplay_meetup", "Cosplay meetup"),
+    ("screening", "Screening"),
+    ("premiere", "Premiere"),
+    ("other", "Other"),
+)
 
 
-@bp.route("/admin/events", methods=["POST"])
-def admin_event_create():
-    user, bounce = _require_admin()
-    if bounce:
-        return bounce
-    title, error = _clean_name(request.form.get("title"), 2, 200, "Event title")
+def _event_draft():
+    keys = (
+        "title",
+        "event_type",
+        "city",
+        "country",
+        "venue",
+        "address",
+        "start_at",
+        "end_at",
+        "latitude",
+        "longitude",
+        "category_id",
+        "fandom_id",
+        "description",
+        "ticket_url",
+    )
+    return {key: request.form.get(key, "") for key in keys}
+
+
+def _event_back(errors, focus=None):
+    session["event_draft"] = _event_draft()
+    session["event_errors"] = errors
+    return _desk_redirect("events", focus=focus, notice="")
+
+
+def _collect_event(require_upcoming=False):
+    title, title_error = _clean_name(request.form.get("title"), 2, 200, "Event title")
     description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
     city, city_error = _clean_name(request.form.get("city"), 2, 100, "City")
     start, start_error = _required_when(request.form.get("start_at"))
@@ -2193,18 +2613,70 @@ def admin_event_create():
     ticket, ticket_error = _optional_url(request.form.get("ticket_url"), "Ticket link")
     lat, lat_error = _coord(request.form.get("latitude"), -90, 90, "Latitude")
     lng, lng_error = _coord(request.form.get("longitude"), -180, 180, "Longitude")
-    kind = request.form.get("event_type", "other")
-    if kind not in EVENT_TYPES:
-        kind = "other"
-    problems = [error, desc_error, city_error, start_error, end_error, ticket_error, lat_error, lng_error]
-    if any(problems):
-        return _desk_redirect("events", next(item for item in problems if item))
-    if end and start and end < start:
-        return _desk_redirect("events", "End time must be after the start time.")
-    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
+    kind = (request.form.get("event_type") or "").strip()
+    allowed_types = {key for key, _label in EVENT_TYPES}
+    type_error = None if kind in allowed_types else "Choose an event type from the list."
+    errors = {}
+    for key, message in (
+        ("title", title_error),
+        ("event_type", type_error),
+        ("city", city_error),
+        ("start_at", start_error),
+        ("end_at", end_error),
+        ("latitude", lat_error),
+        ("longitude", lng_error),
+        ("description", desc_error),
+        ("ticket_url", ticket_error),
+    ):
+        if message:
+            errors[key] = message
+    if require_upcoming and not errors.get("start_at") and start and start.date() < datetime.now().date():
+        errors["start_at"] = "The start date is before today. Pick today or a later date."
+    if not errors.get("start_at") and not errors.get("end_at") and end and start and end < start:
+        errors["end_at"] = "The end time is earlier than the start time. Move the end time later and try again."
+    raw_category = (request.form.get("category_id") or "").strip()
+    category = None
+    if raw_category:
+        category = db.session.get(Category, int(raw_category)) if raw_category.isdigit() else None
+        if category is None:
+            errors["category_id"] = "Choose a category from the list."
     fan, fan_error = _picked_fandom(category)
     if fan_error:
-        return _desk_redirect("events", fan_error)
+        errors["fandom_id"] = fan_error
+    return {
+        "title": title,
+        "description": description,
+        "city": city,
+        "start": start,
+        "end": end,
+        "ticket": ticket,
+        "lat": lat,
+        "lng": lng,
+        "kind": kind,
+        "category": category,
+        "fan": fan,
+    }, errors
+
+
+@bp.route("/admin/events", methods=["POST"])
+def admin_event_create():
+    user, bounce = _require_admin()
+    if bounce:
+        return bounce
+    data, errors = _collect_event(require_upcoming=True)
+    if errors:
+        return _event_back(errors)
+    title = data["title"]
+    description = data["description"]
+    city = data["city"]
+    start = data["start"]
+    end = data["end"]
+    ticket = data["ticket"]
+    lat = data["lat"]
+    lng = data["lng"]
+    kind = data["kind"]
+    category = data["category"]
+    fan = data["fan"]
     row = Event(
         category_id=category.category_id if category else None,
         fandom_id=fan.fandom_id if fan else None,
@@ -2224,7 +2696,13 @@ def admin_event_create():
     )
     db.session.add(row)
     _admin_log(user, "event.create", title)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except (DataError, IntegrityError):
+        db.session.rollback()
+        return _event_back({"form": "The event could not be saved. Check the type, dates, and links, then try again."})
+    session.pop("event_draft", None)
+    session.pop("event_errors", None)
     return _desk_redirect("events")
 
 
@@ -2242,26 +2720,20 @@ def admin_event_update(event_id):
         _admin_log(user, "event.delete", title)
         db.session.commit()
         return _desk_redirect("events", notice="Removed.")
-    title, error = _clean_name(request.form.get("title"), 2, 200, "Event title")
-    description, desc_error = _rich_text(request.form.get("description"), 2000, "Description")
-    city, city_error = _clean_name(request.form.get("city"), 2, 100, "City")
-    start, start_error = _required_when(request.form.get("start_at"))
-    end, end_error = _optional_when(request.form.get("end_at"))
-    ticket, ticket_error = _optional_url(request.form.get("ticket_url"), "Ticket link")
-    lat, lat_error = _coord(request.form.get("latitude"), -90, 90, "Latitude")
-    lng, lng_error = _coord(request.form.get("longitude"), -180, 180, "Longitude")
-    kind = request.form.get("event_type", "other")
-    if kind not in EVENT_TYPES:
-        kind = "other"
-    problems = [error, desc_error, city_error, start_error, end_error, ticket_error, lat_error, lng_error]
-    if any(problems):
-        return _desk_redirect("events", next(item for item in problems if item), event_id)
-    if end and start and end < start:
-        return _desk_redirect("events", "End time must be after the start time.", event_id)
-    category = db.session.get(Category, int(request.form.get("category_id", "0") or 0)) if request.form.get("category_id") else None
-    fan, fan_error = _picked_fandom(category)
-    if fan_error:
-        return _desk_redirect("events", fan_error, event_id)
+    data, errors = _collect_event()
+    if errors:
+        return _event_back(errors, event_id)
+    title = data["title"]
+    description = data["description"]
+    city = data["city"]
+    start = data["start"]
+    end = data["end"]
+    ticket = data["ticket"]
+    lat = data["lat"]
+    lng = data["lng"]
+    kind = data["kind"]
+    category = data["category"]
+    fan = data["fan"]
     row.title = title
     row.description = description
     row.city = city
@@ -2277,7 +2749,13 @@ def admin_event_update(event_id):
     row.category_id = category.category_id if category else None
     row.fandom_id = fan.fandom_id if fan else None
     _admin_log(user, "event.edit", title)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except (DataError, IntegrityError):
+        db.session.rollback()
+        return _event_back({"form": "The event could not be saved. Check the type, dates, and links, then try again."}, event_id)
+    session.pop("event_draft", None)
+    session.pop("event_errors", None)
     return _desk_redirect("events")
 
 
@@ -2452,26 +2930,14 @@ def admin_submission(submission_id):
         row.published_content_id = item.content_id
         row.status = "approved"
         row.reject_reason = ""
-        db.session.add(
-            Notification(
-                user_id=row.user_id,
-                title="Your piece was published",
-                body=f"“{row.title}” is now on the shelves.",
-            )
-        )
+        _tell_author(admin, row, "approve")
         _admin_log(admin, "submission.approve", row.title)
         _toast("Piece published.")
     elif decision == "reject":
         reason = request.form.get("reason", "").strip() or "Needs a revision."
         row.status = "rejected"
         row.reject_reason = reason[:300]
-        db.session.add(
-            Notification(
-                user_id=row.user_id,
-                title="Your piece needs a revision",
-                body=row.reject_reason,
-            )
-        )
+        _tell_author(admin, row, "reject", row.reject_reason)
         _admin_log(admin, "submission.reject", f"{row.title}: {row.reject_reason}")
         _toast("Sent back for a revision.")
     db.session.commit()

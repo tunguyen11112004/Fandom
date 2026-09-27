@@ -160,6 +160,13 @@ class Category(db.Model):
         return category_file(self.slug)
 
     @property
+    def cover_src(self):
+        text = (self.cover_url or "").strip()
+        if text:
+            return text
+        return self.image_path or ""
+
+    @property
     def image_credit(self):
         from app.media import category_credit
 
@@ -273,6 +280,9 @@ class Content(db.Model):
 
     @release_year.setter
     def release_year(self, value):
+        if value in (None, ""):
+            self.release_date = None
+            return
         self.release_date = date(int(value), 1, 1)
 
     @property
@@ -285,14 +295,14 @@ class Content(db.Model):
         from app.media import content_file
 
         thumb = (self.thumbnail_url or "").strip()
-        if thumb.startswith(("http://", "https://")):
+        if thumb.startswith(("http://", "https://", "/")):
             return None
         return content_file(self.slug) or (thumb.split("/")[-1] if thumb else None)
 
     @property
     def poster_url(self):
         thumb = (self.thumbnail_url or "").strip()
-        if thumb.startswith(("http://", "https://")):
+        if thumb.startswith(("http://", "https://", "/")):
             return thumb
         return None
 

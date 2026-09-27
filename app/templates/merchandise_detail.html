@@ -5,7 +5,7 @@
   <article class="product-sheet">
     {% if item.image_url %}
       <figure>
-        <img src="{{ url_for('static', filename='images/catalog/' + item.image_url) }}" alt="{{ item.name }}" />
+        <img src="{{ item.image_url|shot }}" alt="{{ item.name }}" />
       </figure>
     {% endif %}
     <div class="product-copy">
@@ -21,11 +21,12 @@
     {% if tags %}
       <p class="meta-line">{% for tag in tags %}<span class="chip">{{ tag }}</span> {% endfor %}</p>
     {% endif %}
-    {% if item.images %}
-      <ul class="card-grid compact">
-        {% for shot in item.images %}
+    {% set extras = item.images | rejectattr('image_url', 'equalto', item.image_url) | list %}
+    {% if extras %}
+      <ul class="product-shots">
+        {% for shot in extras %}
           <li>
-            <img src="{{ url_for('static', filename='images/catalog/' + shot.image_url) }}" alt="{{ shot.caption or item.name }}" />
+            <img src="{{ shot.image_url|shot }}" alt="{{ shot.caption or item.name }}" />
           </li>
         {% endfor %}
       </ul>
@@ -38,9 +39,11 @@
           <div class="rate-actions">
             <button type="submit" name="action" value="save">{{ 'Update bookmark' if saved else 'Bookmark' }}</button>
             {% if saved %}<button class="quiet" type="submit" name="action" value="remove">Remove</button>{% endif %}
+            <button type="button" class="quiet" id="copy-link">Copy link</button>
           </div>
         {% else %}
           <a class="button" href="{{ url_for('account.login', next=request.path) }}">Sign in to bookmark</a>
+          <button type="button" class="quiet" id="copy-link">Copy link</button>
         {% endif %}
       </form>
     </section>

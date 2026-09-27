@@ -128,6 +128,15 @@ def create_app() -> Flask:
             cleaned = "<p>" + cleaned.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
         return Markup(cleaned) if cleaned else Markup("")
 
+    @app.template_filter("shot")
+    def shot_filter(value):
+        text = (value or "").strip()
+        if not text:
+            return ""
+        if text.startswith(("http://", "https://", "/")):
+            return text
+        return url_for("static", filename="images/catalog/" + text)
+
     @app.context_processor
     def inject_user():
         from .models import Category, Event

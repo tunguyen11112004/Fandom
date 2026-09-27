@@ -36,7 +36,7 @@
     />
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}?v=70"
+      href="{{ url_for('static', filename='css/style.css') }}?v=80"
     />
     {% block extra_head %}{% endblock %}
     <link
@@ -150,9 +150,9 @@
             </summary>
             <div class="nav-menu">
               {% if current_user.is_member %}
-                <a href="{{ url_for('account.dashboard') }}" {% if request.endpoint == 'account.dashboard' %}aria-current="page"{% endif %}>Bookmarks</a>
-                <a href="{{ url_for('account.sent_pieces') }}" {% if request.endpoint == 'account.sent_pieces' %}aria-current="page"{% endif %}>What you sent</a>
                 <a href="{{ url_for('account.profile') }}" {% if request.endpoint == 'account.profile' %}aria-current="page"{% endif %}>Profile</a>
+                <a href="{{ url_for('account.bookmarks') }}" {% if request.endpoint == 'account.bookmarks' %}aria-current="page"{% endif %}>Bookmarks</a>
+                <a href="{{ url_for('account.sent_pieces') }}" {% if request.endpoint == 'account.sent_pieces' %}aria-current="page"{% endif %}>What you sent</a>
                 <a href="{{ url_for('account.feedback') }}" {% if request.endpoint == 'account.feedback' %}aria-current="page"{% endif %}>Feedback</a>
               {% else %}
                 <a href="{{ url_for('account.admin_home', tab='dashboard') }}" {% if request.endpoint and request.endpoint.startswith('account.admin') and request.args.get('tab', 'dashboard') != 'review' %}aria-current="page"{% endif %}>Dashboard</a>
@@ -276,7 +276,7 @@
     </div>
     <script src="https://cdn.ckeditor.com/ckeditor5/41.4.2/classic/ckeditor.js"></script>
     <script src="{{ url_for('static', filename='js/support.js') }}?v=3"></script>
-    <script src="{{ url_for('static', filename='js/forms.js') }}?v=19"></script>
+    <script src="{{ url_for('static', filename='js/forms.js') }}?v=22"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
     <script type="module" src="{{ url_for('static', filename='js/fx.js') }}"></script>

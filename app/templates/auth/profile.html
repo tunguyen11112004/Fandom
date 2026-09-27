@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Profile · Fan Hub Plus{% endblock %}
+{% block title %}Edit profile · Fan Hub Plus{% endblock %}
 {% block body_class %}stack-tv-shows auth desk{% endblock %}
 {% block content %}
 <section class="auth-panel desk-panel">
   <p class="kicker">Profile</p>
-  <h1>{{ user.name }}</h1>
+  <h1>Edit profile</h1>
   {% if user.avatar_path %}
     <img class="avatar" src="{{ url_for('static', filename=user.avatar_path) }}" alt="" />
   {% endif %}
@@ -56,6 +56,6 @@
     {% if error %}<p class="auth-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Save</button>
   </form>
-  <p class="auth-links"><a class="button quiet" href="{{ url_for('account.dashboard') }}">Back to your desk</a></p>
+  <p class="auth-links"><a class="button quiet" href="{{ url_for('account.profile') }}">Back to profile</a></p>
 </section>
 {% endblock %}

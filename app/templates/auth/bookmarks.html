@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_pager.html" import pager %}
+{% block title %}Bookmarks · Fan Hub Plus{% endblock %}
+{% block body_class %}stack-cosplay auth desk{% endblock %}
+{% block content %}
+<section class="auth-panel desk-panel">
+  <header class="desk-top">
+    <div>
+      <p class="kicker">Member desk</p>
+      <h1>Bookmarks</h1>
+      <p>Titles, videos, characters, merchandise, and events you saved.</p>
+    </div>
+    <nav class="desk-actions" aria-label="Bookmark actions">
+      <a href="{{ url_for('account.profile') }}">Profile</a>
+      <a href="{{ url_for('account.sent_pieces') }}">What you sent</a>
+    </nav>
+  </header>
+
+  <nav class="chip-row" aria-label="Bookmark types">
+    <a href="{{ url_for('account.bookmarks') }}" {% if not kind %}aria-current="true"{% endif %}>All</a>
+    <a href="{{ url_for('account.bookmarks', kind='article') }}" {% if kind == 'article' %}aria-current="true"{% endif %}>Articles</a>
+    <a href="{{ url_for('account.bookmarks', kind='video') }}" {% if kind == 'video' %}aria-current="true"{% endif %}>Video</a>
+    <a href="{{ url_for('account.bookmarks', kind='character') }}" {% if kind == 'character' %}aria-current="true"{% endif %}>Characters</a>
+    <a href="{{ url_for('account.bookmarks', kind='merch') }}" {% if kind == 'merch' %}aria-current="true"{% endif %}>Merch</a>
+    <a href="{{ url_for('account.bookmarks', kind='event') }}" {% if kind == 'event' %}aria-current="true"{% endif %}>Events</a>
+  </nav>
+
+  {% if bookmarks %}
+    <ul class="desk-list">
+      {% for row in bookmarks %}
+        {% set back = url_for('account.bookmarks', kind=kind, page=page) if kind else url_for('account.bookmarks', page=page) %}
+        <li>
+          <div class="row-title">
+            {% if row.content %}
+              {% if row.content.published %}
+                <a href="{{ url_for('main.content_detail', slug=row.content.slug) }}">{{ row.content.title }}</a>
+              {% else %}
+                <span>{{ row.content.title }}</span>
+                <span class="chip chip-warn">Unavailable</span>
+              {% endif %}
+            {% elif row.character %}
+              <a href="{{ url_for('main.character_detail', character_id=row.character_id) }}">{{ row.character.name }}</a>
+            {% elif row.merchandise %}
+              <a href="{{ url_for('main.merchandise_detail', item_id=row.merchandise_id) }}">{{ row.merchandise.name }}</a>
+            {% elif row.event %}
+              <a href="{{ url_for('main.event_detail', event_id=row.event_id) }}">{{ row.event.title }}</a>
+            {% else %}
+              <span>Saved item</span>
+            {% endif %}
+          </div>
+          {% if row.note %}<p>{{ row.note }}</p>{% endif %}
+          <div class="piece-actions">
+            {% if row.content %}
+              <form method="post" action="{{ url_for('account.bookmark', slug=row.content.slug) }}">
+                <input type="hidden" name="action" value="remove" />
+                <input type="hidden" name="next" value="{{ back }}" />
+                <button class="quiet" type="submit">Remove</button>
+              </form>
+            {% elif row.character %}
+              <form method="post" action="{{ url_for('account.bookmark_character', character_id=row.character_id) }}">
+                <input type="hidden" name="action" value="remove" />
+                <input type="hidden" name="next" value="{{ back }}" />
+                <button class="quiet" type="submit">Remove</button>
+              </form>
+            {% elif row.merchandise %}
+              <form method="post" action="{{ url_for('account.bookmark_merchandise', item_id=row.merchandise_id) }}">
+                <input type="hidden" name="action" value="remove" />
+                <input type="hidden" name="next" value="{{ back }}" />
+                <button class="quiet" type="submit">Remove</button>
+              </form>
+            {% elif row.event %}
+              <form method="post" action="{{ url_for('account.bookmark_event', event_id=row.event_id) }}">
+                <input type="hidden" name="action" value="remove" />
+                <input type="hidden" name="next" value="{{ back }}" />
+                <button class="quiet" type="submit">Remove</button>
+              </form>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    {{ pager(page, pages, 'account.bookmarks', {'kind': kind} if kind else {}) }}
+  {% else %}
+    <p class="empty-line">No bookmarks{% if kind %} in this type{% endif %} yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

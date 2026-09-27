@@ -61,7 +61,7 @@
     <p class="lede">Taken from the use-case spec: the journeys a guest, a member, and an admin actually walk.</p>
     <ol class="path-grid">
       <li>
-        <a class="path-card" href="{{ url_for('account.dashboard') if current_user else url_for('account.register') }}">
+        <a class="path-card" href="{{ url_for('account.profile') if current_user else url_for('account.register') }}">
           <span class="index">01</span>
           <h3>Guest becomes a member</h3>
           <p>Browse freely. Bookmark, rate, or send a fan post, and the hub asks you to sign in, then brings you back to the same page.</p>
@@ -180,8 +180,8 @@
       {% for category in categories %}
         <li>
           <a class="category-card" href="{{ url_for('main.explore', category=category.slug) }}">
-            {% if category.image_path %}
-              <img src="{{ url_for('static', filename='images/catalog/' + category.image_path) }}" alt="" />
+            {% if category.cover_src %}
+              <img src="{{ category.cover_src|shot }}" alt="" />
             {% endif %}
             <div class="card-copy">
               <span class="index">{{ "%02d"|format(loop.index) }}</span>

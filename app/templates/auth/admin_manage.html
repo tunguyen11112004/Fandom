@@ -24,6 +24,24 @@
     <button type="submit">Add fandom</button>
   </form>
   </details>
+  <form method="get" class="ticket-filters">
+    <input type="hidden" name="tab" value="fandoms" />
+    <label>Search<input name="q" value="{{ list_q }}" placeholder="Name" /></label>
+    <label>Category
+      <select name="category">
+        <option value="">All</option>
+        {% for category in categories %}<option value="{{ category.slug }}" {% if list_category == category.slug %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>State
+      <select name="state">
+        <option value="">Any</option>
+        <option value="active" {% if list_state == 'active' %}selected{% endif %}>Active</option>
+        <option value="hidden" {% if list_state == 'hidden' %}selected{% endif %}>Hidden</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
   <div class="table-wrap">
     <table class="catalog">
       <thead><tr><th>Name</th><th>Category</th><th>State</th><th></th></tr></thead>
@@ -62,7 +80,7 @@
       </tbody>
     </table>
   </div>
-  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'fandoms'}) }}
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'fandoms', 'q': list_q, 'category': list_category, 'state': list_state}) }}
 </section>
 {% endif %}
 
@@ -77,7 +95,7 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add a character</summary>
-  <form method="post" action="{{ url_for('account.admin_character_create') }}" class="desk-form form-grid fan-card">
+  <form method="post" action="{{ url_for('account.admin_character_create') }}" class="desk-form form-grid fan-card" enctype="multipart/form-data">
     <label>Name<input name="name" required minlength="2" maxlength="150" placeholder="Luffy" /></label>
     <label>Alias<input name="alias" maxlength="150" placeholder="Straw Hat" /></label>
     <label>Category
@@ -92,11 +110,29 @@
       </select>
     </label>
     <label class="span-2">Bio<textarea name="bio" rows="3" data-rich placeholder="Who they are, in a few sentences"></textarea></label>
-    <label class="span-2">Image link<input name="image_url" type="url" placeholder="https://" /></label>
+    <label class="span-2">Image link<input name="image_url" type="text" placeholder="https://" /></label>
+    <label class="span-2">Or upload an image<input name="image_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
     {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
     <button type="submit">Add character</button>
   </form>
   </details>
+  <form method="get" class="ticket-filters">
+    <input type="hidden" name="tab" value="characters" />
+    <label>Search<input name="q" value="{{ list_q }}" placeholder="Name or alias" /></label>
+    <label>Category
+      <select name="category">
+        <option value="">All</option>
+        {% for category in categories %}<option value="{{ category.slug }}" {% if list_category == category.slug %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Fandom
+      <select name="fandom">
+        <option value="">All</option>
+        {% for fan in fandom_rows %}<option value="{{ fan.fandom_id }}" {% if list_fandom == fan.fandom_id|string %}selected{% endif %}>{{ fan.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
   <div class="table-wrap">
     <table class="catalog">
       <thead><tr><th>Name</th><th>Fandom</th><th></th></tr></thead>
@@ -108,7 +144,7 @@
             <td>
               <details {% if focus == row.character_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_character_update', character_id=row.character_id) }}" class="desk-form fan-card">
+                <form method="post" action="{{ url_for('account.admin_character_update', character_id=row.character_id) }}" class="desk-form fan-card" enctype="multipart/form-data">
                   <input name="name" value="{{ row.name }}" required minlength="2" maxlength="150" aria-label="Name" placeholder="Luffy" />
                   <input name="alias" value="{{ row.alias or '' }}" maxlength="150" aria-label="Alias" placeholder="Straw Hat" />
                   <select name="category_id" aria-label="Category">
@@ -122,6 +158,7 @@
                   </select>
                   <textarea name="bio" rows="3" data-rich aria-label="Bio" placeholder="Who they are, in a few sentences">{{ row.bio or '' }}</textarea>
                   <input name="image_url" value="{{ row.image_url or '' }}" aria-label="Image link" placeholder="https://" />
+                  <input name="image_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Upload an image" />
                   {% if focus == row.character_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
                   <button type="submit">Save</button>
                 </form>
@@ -137,7 +174,7 @@
       </tbody>
     </table>
   </div>
-  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'characters'}) }}
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'characters', 'q': list_q, 'category': list_category, 'fandom': list_fandom}) }}
 </section>
 {% endif %}
 
@@ -152,7 +189,7 @@
   </header>
   <details class="add-drawer" {% if error and not focus %}open{% endif %}>
     <summary>Add merchandise</summary>
-  <form method="post" action="{{ url_for('account.admin_merch_create') }}" class="desk-form form-grid fan-card">
+  <form method="post" action="{{ url_for('account.admin_merch_create') }}" class="desk-form form-grid fan-card" enctype="multipart/form-data">
     <label>Name<input name="name" required minlength="2" maxlength="200" placeholder="Figure, poster, or lightstick" /></label>
     <label>Category
       <select name="category_id" required>
@@ -164,7 +201,9 @@
     </label>
     <label>Release date<input name="release_date" type="date" /></label>
     <label class="span-2">Description<textarea name="description" rows="2" data-rich placeholder="What is on display"></textarea></label>
-    <label>Image link<input name="image_url" type="url" placeholder="https://" /></label>
+    <label>Image link<input name="image_url" type="text" placeholder="https://" /></label>
+    <label>Or upload an image<input name="image_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" /></label>
+    <label class="span-2">More photos<input name="extra_images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple /></label>
     <label>Reference link<input name="reference_url" type="url" placeholder="https://" /></label>
     <fieldset class="span-2">
       <legend>Tags</legend>
@@ -175,6 +214,24 @@
     <button type="submit">Add merchandise</button>
   </form>
   </details>
+  <form method="get" class="ticket-filters">
+    <input type="hidden" name="tab" value="merch" />
+    <label>Search<input name="q" value="{{ list_q }}" placeholder="Name" /></label>
+    <label>Category
+      <select name="category">
+        <option value="">All</option>
+        {% for category in categories %}<option value="{{ category.slug }}" {% if list_category == category.slug %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Release
+      <select name="state">
+        <option value="">Any</option>
+        <option value="upcoming" {% if list_state == 'upcoming' %}selected{% endif %}>Upcoming</option>
+        <option value="released" {% if list_state == 'released' %}selected{% endif %}>On display</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
   <div class="table-wrap">
     <table class="catalog">
       <thead><tr><th>Name</th><th>Upcoming</th><th></th></tr></thead>
@@ -186,7 +243,7 @@
             <td>
               <details {% if focus == item.item_id|string %}open{% endif %}>
                 <summary>Edit</summary>
-                <form method="post" action="{{ url_for('account.admin_merch_update', item_id=item.item_id) }}" class="desk-form fan-card">
+                <form method="post" action="{{ url_for('account.admin_merch_update', item_id=item.item_id) }}" class="desk-form fan-card" enctype="multipart/form-data">
                   <input name="name" value="{{ item.name }}" required minlength="2" maxlength="200" aria-label="Name" placeholder="Figure, poster, or lightstick" />
                   <select name="category_id" aria-label="Category">
                     {% for category in categories %}<option value="{{ category.id }}" {% if category.id == item.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
@@ -200,6 +257,8 @@
                   <input name="release_date" type="date" value="{{ item.release_date.isoformat() if item.release_date else '' }}" aria-label="Release date" />
                   <textarea name="description" rows="2" data-rich aria-label="Description" placeholder="What is on display">{{ item.description or '' }}</textarea>
                   <input name="image_url" value="{{ item.image_url or '' }}" aria-label="Image link" placeholder="https://" />
+                  <input name="image_file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Upload an image" />
+                  <input name="extra_images" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple aria-label="More photos" />
                   <input name="reference_url" value="{{ item.reference_url or '' }}" aria-label="Reference link" placeholder="https://" />
                   {% for tag in tag_rows %}
                     <label class="check"><input type="checkbox" name="tags" value="{{ tag.tag_id }}" {% if tag.tag_id in merch_tag_map.get(item.item_id, []) %}checked{% endif %} /> {{ tag.name }}</label>
@@ -220,7 +279,7 @@
       </tbody>
     </table>
   </div>
-  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'merch'}) }}
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'merch', 'q': list_q, 'category': list_category, 'state': list_state}) }}
 </section>
 {% endif %}
 
@@ -230,38 +289,64 @@
     <p class="step">07</p>
     <div>
       <h2>Events</h2>
-      <p>City and start time are required. Latitude and longitude place the pin.</p>
+      <p>City and start time are required. Latitude, longitude, and the other blanks can stay empty.</p>
     </div>
   </header>
-  <details class="add-drawer" {% if error and not focus %}open{% endif %}>
+  {% set add_errs = event_errors if event_errors and not focus else {} %}
+  <details class="add-drawer" {% if add_errs %}open{% endif %}>
     <summary>Add an event</summary>
-  <form method="post" action="{{ url_for('account.admin_event_create') }}" class="desk-form form-grid fan-card">
-    <label>Title<input name="title" required minlength="2" maxlength="200" placeholder="Convention, concert, or meetup" /></label>
+  {% set draft = event_draft if event_draft and not focus else {} %}
+  <form method="post" action="{{ url_for('account.admin_event_create') }}" class="desk-form form-grid fan-card" data-future-start>
+    <label>Title<input name="title" required minlength="2" maxlength="200" placeholder="Convention, screening, or premiere" value="{{ draft.title or '' }}" {% if add_errs.get('title') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('title') %}<small class="field-error" role="alert">{{ add_errs.title }}</small>{% endif %}</label>
     <label>Type
-      <select name="event_type">
-        {% for kind in ['convention', 'concert', 'meetup', 'festival', 'expo', 'other'] %}<option value="{{ kind }}">{{ kind }}</option>{% endfor %}
+      <select name="event_type" {% if add_errs.get('event_type') %}class="is-invalid" aria-invalid="true"{% endif %}>
+        {% for kind, label in [('convention', 'Convention'), ('cosplay_meetup', 'Cosplay meetup'), ('screening', 'Screening'), ('premiere', 'Premiere'), ('other', 'Other')] %}
+          <option value="{{ kind }}" {% if (draft.event_type or 'convention') == kind %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
+      {% if add_errs.get('event_type') %}<small class="field-error" role="alert">{{ add_errs.event_type }}</small>{% endif %}
     </label>
-    <label>City<input name="city" required minlength="2" maxlength="100" placeholder="Los Angeles" /></label>
-    <label>Country<input name="country" maxlength="100" placeholder="United States" /></label>
-    <label>Venue<input name="venue" maxlength="255" placeholder="Hall or park name" /></label>
-    <label>Address<input name="address" maxlength="255" placeholder="Street and number" /></label>
-    <label>Starts<input name="start_at" type="datetime-local" required /></label>
-    <label>Ends<input name="end_at" type="datetime-local" /></label>
-    <label>Latitude<input name="latitude" inputmode="decimal" placeholder="34.05" /></label>
-    <label>Longitude<input name="longitude" inputmode="decimal" placeholder="-118.25" /></label>
+    <label>City<input name="city" required minlength="2" maxlength="100" placeholder="Los Angeles" value="{{ draft.city or '' }}" {% if add_errs.get('city') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('city') %}<small class="field-error" role="alert">{{ add_errs.city }}</small>{% endif %}</label>
+    <label>Country<input name="country" maxlength="100" placeholder="United States" value="{{ draft.country or '' }}" /></label>
+    <label>Venue<input name="venue" maxlength="255" placeholder="Hall or park name" value="{{ draft.venue or '' }}" /></label>
+    <label>Address<input name="address" maxlength="255" placeholder="Street and number" value="{{ draft.address or '' }}" /></label>
+    <label>Starts<input name="start_at" type="datetime-local" required value="{{ draft.start_at or '' }}" {% if add_errs.get('start_at') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('start_at') %}<small class="field-error" role="alert">{{ add_errs.start_at }}</small>{% endif %}</label>
+    <label>Ends<input name="end_at" type="datetime-local" value="{{ draft.end_at or '' }}" {% if add_errs.get('end_at') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('end_at') %}<small class="field-error" role="alert">{{ add_errs.end_at }}</small>{% endif %}</label>
+    <label>Latitude<input name="latitude" inputmode="decimal" placeholder="34.05" value="{{ draft.latitude or '' }}" {% if add_errs.get('latitude') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('latitude') %}<small class="field-error" role="alert">{{ add_errs.latitude }}</small>{% endif %}</label>
+    <label>Longitude<input name="longitude" inputmode="decimal" placeholder="-118.25" value="{{ draft.longitude or '' }}" {% if add_errs.get('longitude') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('longitude') %}<small class="field-error" role="alert">{{ add_errs.longitude }}</small>{% endif %}</label>
     <label>Category
-      <select name="category_id"><option value="">None</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select>
+      <select name="category_id" {% if add_errs.get('category_id') %}class="is-invalid" aria-invalid="true"{% endif %}><option value="">None</option>{% for category in categories %}<option value="{{ category.id }}" {% if draft.category_id == category.id|string %}selected{% endif %}>{{ category.name }}</option>{% endfor %}</select>
+      {% if add_errs.get('category_id') %}<small class="field-error" role="alert">{{ add_errs.category_id }}</small>{% endif %}
     </label>
     <label>Fandom
-      <select name="fandom_id" data-fandoms><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}">{{ fan.name }}</option>{% endfor %}</select>
+      <select name="fandom_id" data-fandoms {% if add_errs.get('fandom_id') %}class="is-invalid" aria-invalid="true"{% endif %}><option value="">None</option>{% for fan in fandom_rows if fan.is_active %}<option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if draft.fandom_id == fan.fandom_id|string %}selected{% endif %}>{{ fan.name }}</option>{% endfor %}</select>
+      {% if add_errs.get('fandom_id') %}<small class="field-error" role="alert">{{ add_errs.fandom_id }}</small>{% endif %}
     </label>
-    <label class="span-2">Description<textarea name="description" rows="2" data-rich placeholder="Who it is for, and what happens there"></textarea></label>
-    <label class="span-2">Ticket link<input name="ticket_url" type="url" placeholder="https://" /></label>
-    {% if error and not focus %}<p class="field-error span-2" role="alert">{{ error }}</p>{% endif %}
+    <label class="span-2">Description<textarea name="description" rows="2" data-rich placeholder="Who it is for, and what happens there" {% if add_errs.get('description') %}class="is-invalid" aria-invalid="true"{% endif %}>{{ draft.description or '' }}</textarea>{% if add_errs.get('description') %}<small class="field-error" role="alert">{{ add_errs.description }}</small>{% endif %}</label>
+    <label class="span-2">Ticket link<input name="ticket_url" type="url" placeholder="https://" value="{{ draft.ticket_url or '' }}" {% if add_errs.get('ticket_url') %}class="is-invalid" aria-invalid="true"{% endif %} />{% if add_errs.get('ticket_url') %}<small class="field-error" role="alert">{{ add_errs.ticket_url }}</small>{% endif %}</label>
+    {% if add_errs.get('form') %}<small class="field-error span-2" role="alert">{{ add_errs.form }}</small>{% endif %}
     <button type="submit">Add event</button>
   </form>
   </details>
+  <form method="get" class="ticket-filters">
+    <input type="hidden" name="tab" value="events" />
+    <label>Search<input name="q" value="{{ list_q }}" placeholder="Title or city" /></label>
+    <label>Type
+      <select name="kind">
+        <option value="">All</option>
+        {% for kind, label in [('convention', 'Convention'), ('cosplay_meetup', 'Cosplay meetup'), ('screening', 'Screening'), ('premiere', 'Premiere'), ('other', 'Other')] %}
+          <option value="{{ kind }}" {% if list_kind == kind %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>City
+      <select name="state">
+        <option value="">All</option>
+        {% for city in event_cities %}<option value="{{ city }}" {% if list_state == city %}selected{% endif %}>{{ city }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
   <div class="table-wrap">
     <table class="catalog">
       <thead><tr><th>Title</th><th>City</th><th>When</th><th></th></tr></thead>
@@ -275,33 +360,46 @@
               <details {% if focus == row.event_id|string %}open{% endif %}>
                 <summary>Edit</summary>
                 <form method="post" action="{{ url_for('account.admin_event_update', event_id=row.event_id) }}" class="desk-form fan-card">
-                  <input name="title" value="{{ row.title }}" required minlength="2" maxlength="200" aria-label="Title" placeholder="Convention, concert, or meetup" />
-                  <select name="event_type" aria-label="Type">
-                    {% for kind in ['convention', 'concert', 'meetup', 'festival', 'expo', 'other'] %}
-                      <option value="{{ kind }}" {% if row.event_type == kind %}selected{% endif %}>{{ kind }}</option>
+                  {% set ed = event_draft if focus == row.event_id|string and event_draft else none %}
+                  {% set ed_errs = event_errors if event_errors and focus == row.event_id|string else {} %}
+                  <input name="title" value="{{ ed.title if ed else row.title }}" required minlength="2" maxlength="200" aria-label="Title" placeholder="Convention, screening, or premiere" {% if ed_errs.get('title') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('title') %}<small class="field-error" role="alert">{{ ed_errs.title }}</small>{% endif %}
+                  <select name="event_type" aria-label="Type" {% if ed_errs.get('event_type') %}class="is-invalid" aria-invalid="true"{% endif %}>
+                    {% for kind, label in [('convention', 'Convention'), ('cosplay_meetup', 'Cosplay meetup'), ('screening', 'Screening'), ('premiere', 'Premiere'), ('other', 'Other')] %}
+                      <option value="{{ kind }}" {% if (ed.event_type if ed else row.event_type) == kind %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                   </select>
-                  <input name="city" value="{{ row.city }}" required aria-label="City" placeholder="Los Angeles" />
-                  <input name="country" value="{{ row.country or '' }}" aria-label="Country" placeholder="United States" />
-                  <input name="venue" value="{{ row.venue or '' }}" aria-label="Venue" placeholder="Hall or park name" />
-                  <input name="address" value="{{ row.address or '' }}" aria-label="Address" placeholder="Street and number" />
-                  <input name="start_at" type="datetime-local" value="{{ row.start_at.strftime('%Y-%m-%dT%H:%M') if row.start_at else '' }}" required aria-label="Starts" />
-                  <input name="end_at" type="datetime-local" value="{{ row.end_at.strftime('%Y-%m-%dT%H:%M') if row.end_at else '' }}" aria-label="Ends" />
-                  <input name="latitude" value="{{ row.latitude if row.latitude is not none else '' }}" aria-label="Latitude" placeholder="34.05" />
-                  <input name="longitude" value="{{ row.longitude if row.longitude is not none else '' }}" aria-label="Longitude" placeholder="-118.25" />
-                  <select name="category_id" aria-label="Category">
+                  {% if ed_errs.get('event_type') %}<small class="field-error" role="alert">{{ ed_errs.event_type }}</small>{% endif %}
+                  <input name="city" value="{{ ed.city if ed else row.city }}" required aria-label="City" placeholder="Los Angeles" {% if ed_errs.get('city') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('city') %}<small class="field-error" role="alert">{{ ed_errs.city }}</small>{% endif %}
+                  <input name="country" value="{{ ed.country if ed else (row.country or '') }}" aria-label="Country" placeholder="United States" />
+                  <input name="venue" value="{{ ed.venue if ed else (row.venue or '') }}" aria-label="Venue" placeholder="Hall or park name" />
+                  <input name="address" value="{{ ed.address if ed else (row.address or '') }}" aria-label="Address" placeholder="Street and number" />
+                  <input name="start_at" type="datetime-local" value="{{ ed.start_at if ed else (row.start_at.strftime('%Y-%m-%dT%H:%M') if row.start_at else '') }}" required aria-label="Starts" {% if ed_errs.get('start_at') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('start_at') %}<small class="field-error" role="alert">{{ ed_errs.start_at }}</small>{% endif %}
+                  <input name="end_at" type="datetime-local" value="{{ ed.end_at if ed else (row.end_at.strftime('%Y-%m-%dT%H:%M') if row.end_at else '') }}" aria-label="Ends" {% if ed_errs.get('end_at') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('end_at') %}<small class="field-error" role="alert">{{ ed_errs.end_at }}</small>{% endif %}
+                  <input name="latitude" value="{{ ed.latitude if ed else (row.latitude if row.latitude is not none else '') }}" aria-label="Latitude" placeholder="34.05" {% if ed_errs.get('latitude') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('latitude') %}<small class="field-error" role="alert">{{ ed_errs.latitude }}</small>{% endif %}
+                  <input name="longitude" value="{{ ed.longitude if ed else (row.longitude if row.longitude is not none else '') }}" aria-label="Longitude" placeholder="-118.25" {% if ed_errs.get('longitude') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('longitude') %}<small class="field-error" role="alert">{{ ed_errs.longitude }}</small>{% endif %}
+                  <select name="category_id" aria-label="Category" {% if ed_errs.get('category_id') %}class="is-invalid" aria-invalid="true"{% endif %}>
                     <option value="">None</option>
-                    {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.category_id %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
+                    {% for category in categories %}<option value="{{ category.id }}" {% if (ed.category_id if ed else row.category_id|string) == category.id|string %}selected{% endif %}>{{ category.name }}</option>{% endfor %}
                   </select>
-                  <select name="fandom_id" data-fandoms aria-label="Fandom">
+                  {% if ed_errs.get('category_id') %}<small class="field-error" role="alert">{{ ed_errs.category_id }}</small>{% endif %}
+                  <select name="fandom_id" data-fandoms aria-label="Fandom" {% if ed_errs.get('fandom_id') %}class="is-invalid" aria-invalid="true"{% endif %}>
                     <option value="">None</option>
                     {% for fan in fandom_rows if fan.is_active or fan.fandom_id == row.fandom_id %}
-                      <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if fan.fandom_id == row.fandom_id %}selected{% endif %}>{{ fan.name }}</option>
+                      <option value="{{ fan.fandom_id }}" data-category="{{ fan.category_id }}" {% if (ed.fandom_id if ed else row.fandom_id|string) == fan.fandom_id|string %}selected{% endif %}>{{ fan.name }}</option>
                     {% endfor %}
                   </select>
-                  <textarea name="description" rows="2" data-rich aria-label="Description" placeholder="Who it is for, and what happens there">{{ row.description or '' }}</textarea>
-                  <input name="ticket_url" value="{{ row.ticket_url or '' }}" aria-label="Ticket link" placeholder="https://" />
-                  {% if focus == row.event_id|string and error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+                  {% if ed_errs.get('fandom_id') %}<small class="field-error" role="alert">{{ ed_errs.fandom_id }}</small>{% endif %}
+                  <textarea name="description" rows="2" data-rich aria-label="Description" placeholder="Who it is for, and what happens there" {% if ed_errs.get('description') %}class="is-invalid" aria-invalid="true"{% endif %}>{{ ed.description if ed else (row.description or '') }}</textarea>
+                  {% if ed_errs.get('description') %}<small class="field-error" role="alert">{{ ed_errs.description }}</small>{% endif %}
+                  <input name="ticket_url" value="{{ ed.ticket_url if ed else (row.ticket_url or '') }}" aria-label="Ticket link" placeholder="https://" {% if ed_errs.get('ticket_url') %}class="is-invalid" aria-invalid="true"{% endif %} />
+                  {% if ed_errs.get('ticket_url') %}<small class="field-error" role="alert">{{ ed_errs.ticket_url }}</small>{% endif %}
+                  {% if ed_errs.get('form') %}<small class="field-error" role="alert">{{ ed_errs.form }}</small>{% endif %}
                   <button type="submit">Save</button>
                 </form>
                 <form method="post" action="{{ url_for('account.admin_event_update', event_id=row.event_id) }}" onsubmit="return confirm({{ ('Delete ' ~ row.title ~ '?')|tojson }})">
@@ -316,7 +414,7 @@
       </tbody>
     </table>
   </div>
-  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'events'}) }}
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'events', 'q': list_q, 'kind': list_kind, 'state': list_state}) }}
 </section>
 {% endif %}
 
@@ -337,6 +435,11 @@
     <button type="submit">Add tag</button>
   </form>
   </details>
+  <form method="get" class="ticket-filters">
+    <input type="hidden" name="tab" value="tags" />
+    <label>Search<input name="q" value="{{ list_q }}" placeholder="Name" /></label>
+    <button type="submit">Filter</button>
+  </form>
   <div class="table-wrap">
     <table class="catalog">
       <thead><tr><th>Name</th><th></th></tr></thead>
@@ -361,7 +464,7 @@
       </tbody>
     </table>
   </div>
-  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'tags'}) }}
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'tags', 'q': list_q}) }}
 </section>
 {% endif %}
 
@@ -388,6 +491,18 @@
     <button type="submit">Add FAQ</button>
   </form>
   </details>
+  <form method="get" class="ticket-filters">
+    <input type="hidden" name="tab" value="faq" />
+    <label>Search<input name="q" value="{{ list_q }}" placeholder="Question or keyword" /></label>
+    <label>State
+      <select name="state">
+        <option value="">Any</option>
+        <option value="active" {% if list_state == 'active' %}selected{% endif %}>Active</option>
+        <option value="hidden" {% if list_state == 'hidden' %}selected{% endif %}>Hidden</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
   <div class="table-wrap">
     <table class="catalog">
       <thead><tr><th>Question</th><th>State</th><th></th></tr></thead>
@@ -423,7 +538,7 @@
       </tbody>
     </table>
   </div>
-  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'faq'}) }}
+  {{ pager(desk_page, desk_pages, 'account.admin_home', {'tab': 'faq', 'q': list_q, 'state': list_state}) }}
   <h3>Questions the chatbot could not match</h3>
   <ul>
     {% for row in missed_questions %}

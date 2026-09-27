@@ -149,6 +149,31 @@ def db_counts():
     return rows
 
 
+def _category_shelves(category):
+    published = Content.query.filter(
+        Content.category_id == category.category_id,
+        Content.status == "published",
+    )
+    media_types = ("video", "trailer", "explainer", "audio", "image")
+    return {
+        "featured": published.filter(Content.is_featured.is_(True)).order_by(Content.popularity_score.desc()).limit(4).all(),
+        "articles": published.filter(Content.type == "article").order_by(Content.release_date.desc(), Content.title.asc()).limit(4).all(),
+        "media": published.filter(Content.type.in_(media_types)).order_by(Content.release_date.desc(), Content.title.asc()).limit(4).all(),
+        "characters": (
+            CharacterProfile.query.filter_by(category_id=category.category_id)
+            .order_by(CharacterProfile.name.asc())
+            .limit(4)
+            .all()
+        ),
+        "merchandise": (
+            MerchandiseItem.query.filter_by(category_id=category.category_id)
+            .order_by(MerchandiseItem.name.asc())
+            .limit(4)
+            .all()
+        ),
+    }
+
+
 def _guest_advanced(args, viewer):
     if viewer is not None and (viewer.is_member or viewer.role == "admin"):
         return False
@@ -204,10 +229,21 @@ def explore():
     ]
     active_category = request.args.get("category", "").strip()
     category_name = None
+    match = None
     if active_category:
         match = Category.query.filter_by(slug=active_category).first()
         category_name = match.name if match else None
     fandoms = Fandom.query.filter_by(is_active=True).order_by(Fandom.name).all()
+    shelves = None
+    if (
+        match is not None
+        and page == 1
+        and not any(
+            request.args.get(key, "").strip()
+            for key in ("q", "genre", "year", "type", "popularity", "fandom", "featured")
+        )
+    ):
+        shelves = _category_shelves(match)
     filters = {
         "q": request.args.get("q", "").strip(),
         "category": active_category,
@@ -232,6 +268,7 @@ def explore():
         filters=filters,
         chips=_explore_chips(filters, sort),
         category_name=category_name,
+        shelves=shelves,
         shelf=hottest(limit=None) if active_category in {"anime", "manga"} else [],
         can_filter=viewer is not None and (viewer.is_member or viewer.role == "admin"),
         page=page,
@@ -376,6 +413,8 @@ def _media_player(item):
         return "audio", url
     if lower.endswith((".mp4", ".webm")) or item.type in {"video", "trailer", "explainer"}:
         return "video", url
+    if lower.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) or item.type == "image":
+        return None, None
     return "link", url
 
 
@@ -516,25 +555,38 @@ def sitemap():
 
 
 def _map_pins(pins):
-    grouped = {}
+    markers = []
     for pin in pins:
         if pin["lat"] is None or pin["lng"] is None:
             continue
-        grouped.setdefault(pin["city"], []).append(pin)
-    markers = []
-    for city, items in grouped.items():
         markers.append(
             {
-                "city": city,
-                "lat": items[0]["lat"],
-                "lng": items[0]["lng"],
-                "events": [
-                    {"id": item["id"], "title": item["title"], "when": item["when"], "kind": item["kind"]}
-                    for item in items
-                ],
+                "id": pin["id"],
+                "title": pin["title"],
+                "city": pin["city"],
+                "venue": pin.get("venue") or "",
+                "address": pin.get("address") or "",
+                "country": pin.get("country") or "",
+                "kind": pin["kind"],
+                "when": pin["when"],
+                "lat": pin["lat"],
+                "lng": pin["lng"],
             }
         )
     return markers
+
+
+@bp.route("/events/<int:event_id>")
+def event_detail(event_id):
+    row = db.session.get(Event, event_id)
+    if row is None:
+        abort(404)
+    viewer = current_user()
+    saved = None
+    if viewer is not None and viewer.is_member:
+        saved = Bookmark.query.filter_by(user_id=viewer.user_id, event_id=row.event_id).first()
+    category = db.session.get(Category, row.category_id) if row.category_id else None
+    return render_template("event_detail.html", event=row, saved=saved, category=category)
 
 
 @bp.route("/events")
@@ -583,7 +635,9 @@ def events():
                 "id": row.event_id,
                 "title": row.title,
                 "city": row.city,
+                "country": row.country or "",
                 "venue": row.venue,
+                "address": row.address or "",
                 "description": row.description,
                 "kind": row.event_type,
                 "when": row.start_at.strftime("%d %b %Y") if row.start_at else "",
@@ -609,7 +663,7 @@ def events():
             for row in Bookmark.query.filter(Bookmark.user_id == viewer.user_id, Bookmark.event_id.isnot(None))
         }
     focus_event = request.args.get("event", "").strip()
-    per_page = 6
+    per_page = 4
     if focus_event.isdigit() and not request.args.get("page"):
         ids = [item["id"] for item in pins]
         if int(focus_event) in ids:
@@ -649,6 +703,7 @@ def events():
         date_to=date_to,
         page=page,
         pages=pages,
+        total_items=len(pins),
         event_query=event_query,
     )
 

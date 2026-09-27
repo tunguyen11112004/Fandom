@@ -35,7 +35,7 @@
               <li>
                 <a class="cast-tile" href="{{ url_for('main.character_detail', character_id=card.row.character_id) }}">
                   {% if card.row.image_url %}
-                    <img src="{{ url_for('static', filename='images/catalog/' + card.row.image_url) }}" alt="" />
+                    <img src="{{ card.row.image_url|shot }}" alt="" />
                   {% else %}
                     <span class="cast-blank" aria-hidden="true">{{ card.row.name[:1] }}</span>
                   {% endif %}

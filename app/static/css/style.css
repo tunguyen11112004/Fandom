@@ -2418,6 +2418,9 @@ a.flagship-card:hover {
   font-size: 0.82rem;
   line-height: 1.35;
   text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
 }
 
 .auth-panel p.auth-error {
@@ -2928,10 +2931,35 @@ select.is-invalid {
   width: min(var(--wide), calc(100% - 1rem));
 }
 
+.events-board .map-tools {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.95rem 0 0.7rem;
+}
+
+.events-board .map-tools button {
+  min-height: 2.7rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  color: #f6f1e6;
+  border-color: rgba(242, 193, 78, 0.45);
+  background: rgba(8, 12, 24, 0.62);
+}
+
+.events-board .event-filter {
+  width: 100%;
+  margin: 0.9rem 0 0;
+}
+
+.events-board .pager {
+  width: 100%;
+  margin: 0.9rem 0 0;
+}
+
 .event-list {
   list-style: none;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.7rem;
   margin: 0.9rem 0 0;
   padding: 0;
@@ -3209,7 +3237,6 @@ body.auth.desk .desk-panel {
   gap: 0.4rem;
 }
 
-.desk-actions a,
 .chip-row a {
   padding: 0.35rem 0.75rem;
   border-radius: 999px;
@@ -3219,11 +3246,28 @@ body.auth.desk .desk-panel {
   background: rgba(8, 12, 24, 0.72);
 }
 
-.desk-actions a:hover,
+.desk-actions a {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  background: linear-gradient(90deg, #ff7a00, #efc134);
+  color: #1a120c;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
 .chip-row a:hover,
 .chip-row a[aria-current="true"] {
   border-color: var(--gold);
   color: var(--gold);
+}
+
+.desk-actions a:hover {
+  background: linear-gradient(90deg, #ff8f26, #ffd56a);
+  color: #1a120c;
 }
 
 .kpi-row {
@@ -3589,8 +3633,18 @@ button.quiet {
   margin: 0.4rem 0;
 }
 
-.category-add {
+.category-add,
+.category-edit > .ticket-filters {
   grid-column: 1 / -1;
+}
+
+.category-cover {
+  display: block;
+  width: 100%;
+  max-height: 8rem;
+  object-fit: cover;
+  border-radius: 0.7rem;
+  margin-bottom: 0.6rem;
 }
 
 .category-edit label {
@@ -4099,10 +4153,39 @@ body.media-room main {
   border: 1px solid rgba(196, 140, 62, 0.4);
 }
 
+.product-copy {
+  min-width: 0;
+}
+
+.product-sheet figure {
+  margin: 0;
+}
+
 .product-sheet figure img {
+  display: block;
   width: 100%;
+  max-height: 28rem;
+  object-fit: cover;
   border-radius: 0.35rem;
   background: #f4efe4;
+}
+
+.product-sheet .product-shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.product-sheet .product-shots img {
+  display: block;
+  width: 100%;
+  height: 8.5rem;
+  object-fit: cover;
+  border-radius: 0.35rem;
 }
 
 .cast-room .section {
@@ -4228,7 +4311,7 @@ body.media-room main {
   }
 
   html.fit-page .event-list {
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
   }
 
   html.fit-page .event-map {
@@ -5085,8 +5168,22 @@ body.auth.desk .desk-panel::before {
   font-weight: 600;
 }
 
+.desk-panel .desk-form > label,
+.desk-panel #bug-fields label {
+  display: grid;
+  gap: 0.35rem;
+  text-align: left;
+}
+
+.desk-panel .ck.ck-editor {
+  width: 100%;
+  text-align: left;
+}
+
+.desk-panel .chip-row {
+  margin: 0.4rem 0 1rem;
+}
 .desk-form label,
-.profile-form label,
 .category-add label,
 .auth-panel form label {
   color: #ffdbc8;
@@ -5760,5 +5857,12 @@ body.auth.desk .desk-panel a.button:not(.quiet):hover,
 
 .piece-actions form {
   margin: 0;
+}
+
+.opt {
+  color: #8d8374;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 

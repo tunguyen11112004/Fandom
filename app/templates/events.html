@@ -6,15 +6,18 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
 {% endblock %}
 {% block content %}
+    {% set type_label = {'convention': 'Convention', 'cosplay_meetup': 'Cosplay meetup', 'screening': 'Screening', 'premiere': 'Premiere', 'other': 'Other'} %}
     <header class="page-head">
       <h1>Near you</h1>
       <p>Allow location to sort by distance, or pick a city. Ticket links open in a new tab. Nothing is sold here.</p>
     </header>
-  <form class="filters studio-filter" method="get">
+  <section class="section events-board">
+  <form class="filters studio-filter event-filter" method="get">
     <header class="studio-filter-head">
       <div>
         <p class="kicker">Find a date</p>
         <h2>City, type, and week</h2>
+        <p id="event-count">{{ total_items }} date{{ '' if total_items == 1 else 's' }}{% if pages > 1 %}. Page {{ page }} of {{ pages }}.{% endif %}</p>
       </div>
     </header>
     <div>
@@ -31,7 +34,7 @@
       <select id="event_type" name="event_type">
         <option value="">All types</option>
         {% for name in types %}
-          <option value="{{ name }}" {% if event_type == name %}selected{% endif %}>{{ name }}</option>
+          <option value="{{ name }}" {% if event_type == name %}selected{% endif %}>{{ type_label.get(name, name) }}</option>
         {% endfor %}
       </select>
     </div>
@@ -56,19 +59,20 @@
       <span></span>
       <div class="filter-actions">
         <a href="{{ url_for('main.events') }}">Clear</a>
-        <button class="quiet" type="button" id="use-location">Use my location</button>
         <button type="submit">Filter</button>
       </div>
     </div>
   </form>
-  <section class="section events-board">
+    <div class="map-tools">
+      <button class="quiet" type="button" id="use-location">Use my location</button>
+    </div>
     <div id="event-map" class="event-map" aria-label="Event cities"></div>
     <script id="event-map-data" type="application/json">{{ {"pins": map_pins, "you": you} | tojson }}</script>
     <ol class="event-list" id="calendar">
       {% for event in events %}
         <li id="{{ event.id }}">
-          <p class="kicker">{{ event.kind }}</p>
-          <h2>{{ event.title }}</h2>
+          <p class="kicker">{{ type_label.get(event.kind, event.kind) }}</p>
+          <h2><a href="{{ url_for('main.event_detail', event_id=event.id) }}">{{ event.title }}</a></h2>
           <p>{{ event.city }}{% if event.venue %} · {{ event.venue }}{% endif %} · <time>{{ event.when }}</time>{% if event.distance_km %} · {{ event.distance_km }} km{% endif %}</p>
           {% if event.description %}<div class="rich-copy">{{ event.description|rich }}</div>{% endif %}
           {% if event.ticket_url or (current_user and current_user.is_member) %}
@@ -100,7 +104,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="{{ url_for('static', filename='js/map.js') }}?v=4"></script>
+<script src="{{ url_for('static', filename='js/map.js') }}?v=5"></script>
 <script>
   (function () {
     const form = document.querySelector("form.filters");
@@ -123,7 +127,16 @@
       });
     }
 
-    async function applyFilters(url, push) {
+    function stayOnList() {
+      const list = document.querySelector("#calendar");
+      if (!list) return;
+      const header = document.querySelector(".site-header");
+      const offset = (header ? header.offsetHeight : 0) + 16;
+      const top = list.getBoundingClientRect().top + window.scrollY - offset;
+      window.scrollTo(0, Math.max(0, top));
+    }
+
+    async function applyFilters(url, push, anchor) {
       const spot = window.scrollY;
       board.setAttribute("aria-busy", "true");
       try {
@@ -145,10 +158,14 @@
         } else if (pager) {
           pager.remove();
         }
+        const nextCount = doc.querySelector("#event-count");
+        const count = document.querySelector("#event-count");
+        if (nextCount && count) count.textContent = nextCount.textContent;
         if (push) history.pushState({}, "", url);
         syncForm(url);
         if (window.fanhubMountMap) window.fanhubMountMap();
-        window.scrollTo(0, spot);
+        if (anchor === "list") stayOnList();
+        else window.scrollTo(0, spot);
       } catch (err) {
         location.assign(url);
       } finally {
@@ -184,6 +201,15 @@
       });
     }
 
+    board.addEventListener("click", function (event) {
+      const link = event.target.closest(".pager a");
+      if (!link) return;
+      event.preventDefault();
+      applyFilters(new URL(link.href, location.origin), true, "list");
+    });
+
+    if (new URL(location.href).searchParams.get("page")) stayOnList();
+
     board.addEventListener("submit", function (event) {
       const bookmark = event.target;
       if (!bookmark.classList || !bookmark.classList.contains("bookmark-bar")) return;
@@ -200,7 +226,8 @@
     }, true);
 
     window.addEventListener("popstate", function () {
-      applyFilters(location.href, false);
+      const paging = new URL(location.href).searchParams.has("page");
+      applyFilters(location.href, false, paging ? "list" : null);
     });
   })();
 </script>

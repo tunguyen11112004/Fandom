@@ -2,6 +2,7 @@
   function textFor(field) {
     const state = field.validity;
     if (state.valueMissing) return "This field is required.";
+    if (state.customError) return field.validationMessage;
     if (state.typeMismatch && field.type === "email") return "Enter a real email address.";
     if (state.typeMismatch) return "Enter a link that starts with http:// or https://.";
     if (state.tooShort) return "Use at least " + field.minLength + " characters.";
@@ -280,6 +281,19 @@
     }
   });
 
+  document.querySelectorAll("form label").forEach(function (label) {
+    const form = label.closest("form");
+    const method = form ? (form.getAttribute("method") || "get").toLowerCase() : "get";
+    if (method !== "post") return;
+    const field = label.querySelector("input, textarea, select");
+    if (!field || field.required || field.type === "hidden" || field.type === "checkbox" || field.type === "radio" || field.type === "file" || field.type === "submit") return;
+    if (label.querySelector(".opt")) return;
+    const mark = document.createElement("span");
+    mark.className = "opt";
+    mark.textContent = " Optional";
+    label.insertBefore(mark, field);
+  });
+
   const csrf = document.querySelector('meta[name="csrf"]');
   if (csrf) {
     document.querySelectorAll("form").forEach(function (form) {
@@ -293,6 +307,11 @@
     });
   }
 
+  document.querySelectorAll("form[data-future-start] [name='start_at']").forEach(function (field) {
+    const now = new Date();
+    field.min = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0") + "T00:00";
+  });
+
   document.querySelectorAll("form").forEach(function (form) {
     if (form.classList.contains("support-form")) return;
     form.noValidate = true;
@@ -304,6 +323,34 @@
       }
       form.dataset.sending = "1";
       clear(form);
+      const end = form.elements["end_at"];
+      const start = form.elements["start_at"];
+      if (start && form.hasAttribute("data-future-start")) {
+        start.setCustomValidity("");
+        if (start.value) {
+          const now = new Date();
+          const today = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0") + "T00:00";
+          if (start.value < today) {
+            start.setCustomValidity("The start date is before today. Pick today or a later date.");
+          }
+        }
+      }
+      if (end && start) {
+        end.setCustomValidity("");
+        if (end.value && start.value && end.value < start.value) {
+          end.setCustomValidity("The end time is earlier than the start time. Move the end time later and try again.");
+        }
+      }
+      [["latitude", -90, 90, "Latitude"], ["longitude", -180, 180, "Longitude"]].forEach(function (rule) {
+        const coord = form.elements[rule[0]];
+        if (!coord || coord.disabled) return;
+        coord.setCustomValidity("");
+        const text = (coord.value || "").trim();
+        if (!text) return;
+        const number = Number(text);
+        if (!Number.isFinite(number)) coord.setCustomValidity(rule[3] + " must be a number.");
+        else if (number < rule[1] || number > rule[2]) coord.setCustomValidity(rule[3] + " must be between " + rule[1] + " and " + rule[2] + ".");
+      });
       const fields = Array.prototype.filter.call(form.elements, function (field) {
         return field.willValidate && !field.disabled && !field.checkValidity();
       });
@@ -330,6 +377,13 @@
     });
     form.addEventListener("input", function (event) {
       const field = event.target;
+      if (field && typeof field.setCustomValidity === "function") {
+        if (field.name === "start_at") {
+          field.setCustomValidity("");
+          if (form.elements["end_at"]) form.elements["end_at"].setCustomValidity("");
+        }
+        if (field.name === "end_at" || field.name === "latitude" || field.name === "longitude") field.setCustomValidity("");
+      }
       const next = field.nextElementSibling;
       if (next && next.classList.contains("field-error") && next.classList.contains("js")) next.remove();
       field.classList.remove("is-invalid");

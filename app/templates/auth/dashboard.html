@@ -1,6 +1,5 @@
 {% extends "base.html" %}
-{% from "_pager.html" import pager %}
-{% block title %}Your desk · Fan Hub Plus{% endblock %}
+{% block title %}Profile · Fan Hub Plus{% endblock %}
 {% block body_class %}stack-cosplay auth desk{% endblock %}
 {% block content %}
 <section class="auth-panel desk-panel">
@@ -12,13 +11,13 @@
         <span class="avatar avatar-fallback" aria-hidden="true">{{ user.name[:1] }}</span>
       {% endif %}
       <div>
-        <p class="kicker">Member desk</p>
+        <p class="kicker">Profile</p>
         <h1>Hello, {{ user.name }}</h1>
-        <p>{% if user.favorite %}Following {{ user.favorite }}.{% else %}Add a favorite fandom so this desk can follow you.{% endif %}</p>
+        <p>{% if user.favorite %}Following {{ user.favorite }}.{% else %}Add a favorite fandom so this page can follow you.{% endif %}</p>
       </div>
     </div>
-    <nav class="desk-actions" aria-label="Member actions">
-      <a href="{{ url_for('account.profile') }}">Profile</a>
+    <nav class="desk-actions" aria-label="Profile actions">
+      <a href="{{ url_for('account.profile_edit') }}">Edit profile</a>
       <a href="{{ url_for('account.sent_pieces') }}">What you sent</a>
       <a href="{{ url_for('account.submissions') }}">Send a piece</a>
       <a href="{{ url_for('account.feedback') }}">Feedback</a>
@@ -27,13 +26,42 @@
   </header>
 
   <ul class="kpi-row">
-    <li><span>Bookmarks</span><strong>{{ bookmarks|length }}</strong></li>
+    <li><span>Bookmarks</span><strong>{{ bookmark_count }}</strong></li>
     <li><span>Pieces sent</span><strong>{{ sent_count }}</strong></li>
     <li><span>Recent moves</span><strong>{{ activity|length }}</strong></li>
     <li><span>Favorite</span><strong class="kpi-text">{{ user.favorite or "Not set" }}</strong></li>
   </ul>
 
   <div class="desk-grid">
+    <section class="panel-card">
+      <header class="panel-head">
+        <h2>Notices</h2>
+        <p>{% if notice_count == 1 %}1 notice.{% elif notice_count %}{{ notice_count }} notices.{% else %}No notices yet.{% endif %} The five newest are here. Decisions on pieces you sent.</p>
+      </header>
+      {% if notices %}
+        <ul class="desk-list">
+          {% for notice in notices %}
+            <li>
+              <div class="row-title">
+                <strong>{{ notice.title }}</strong>
+                {% if not notice.is_read %}<span class="chip">New</span>{% endif %}
+              </div>
+              <p>{{ notice.body }}</p>
+              {% if not notice.is_read %}
+                <form method="post" action="{{ url_for('account.read_notice', notification_id=notice.notification_id) }}">
+                  <input type="hidden" name="next" value="/profile" />
+                  <button class="quiet" type="submit">Mark read</button>
+                </form>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty-line">No decisions yet. A published or returned piece will show up here.</p>
+      {% endif %}
+      <p><a class="button" href="{{ url_for('account.notices') }}">Open notices</a></p>
+    </section>
+
     <section class="panel-card">
       <header class="panel-head">
         <h2>Recent activity</h2>
@@ -56,7 +84,7 @@
     <section class="panel-card">
       <header class="panel-head">
         <h2>From your fandoms</h2>
-        <p>Matched from your favorite and the categories you picked.</p>
+        <p>{% if pick_count == 1 %}1 title.{% elif pick_count %}{{ pick_count }} titles.{% else %}No titles yet.{% endif %} The five newest matches are here.</p>
       </header>
       {% if picks %}
         <ul class="desk-list">
@@ -67,60 +95,61 @@
             </li>
           {% endfor %}
         </ul>
+        <p><a class="button" href="{{ url_for('account.picks') }}">Open the list</a></p>
       {% else %}
         <p class="empty-line">Choose a favorite fandom or a few categories on your profile.</p>
-        <p><a class="button" href="{{ url_for('account.profile') }}">Set that up</a></p>
+        <p><a class="button" href="{{ url_for('account.profile_edit') }}">Edit profile</a></p>
       {% endif %}
     </section>
 
     <section class="panel-card">
       <header class="panel-head">
         <h2>Bookmarks</h2>
-        <nav class="chip-row" aria-label="Bookmark types">
-          <a href="{{ url_for('account.dashboard') }}" {% if not kind %}aria-current="true"{% endif %}>All</a>
-          <a href="{{ url_for('account.dashboard', kind='article') }}" {% if kind == 'article' %}aria-current="true"{% endif %}>Articles</a>
-          <a href="{{ url_for('account.dashboard', kind='video') }}" {% if kind == 'video' %}aria-current="true"{% endif %}>Video</a>
-          <a href="{{ url_for('account.dashboard', kind='character') }}" {% if kind == 'character' %}aria-current="true"{% endif %}>Characters</a>
-          <a href="{{ url_for('account.dashboard', kind='merch') }}" {% if kind == 'merch' %}aria-current="true"{% endif %}>Merch</a>
-        </nav>
+        <p>{% if bookmark_count == 1 %}1 saved.{% elif bookmark_count %}{{ bookmark_count }} saved.{% else %}Nothing saved yet.{% endif %} The five newest are here.</p>
       </header>
-      {% if bookmarks %}
+      {% if recent_bookmarks %}
         <ul class="desk-list">
-          {% for row in bookmarks %}
+          {% for row in recent_bookmarks %}
             <li>
-              <div class="row-title">
-                {% if row.content %}
-                  {% if row.content.published %}
-                    <a href="{{ url_for('main.content_detail', slug=row.content.slug) }}">{{ row.content.title }}</a>
-                  {% else %}
-                    <span>{{ row.content.title }}</span>
-                    <span class="chip chip-warn">Unavailable</span>
-                  {% endif %}
-                {% elif row.character %}
-                  <a href="{{ url_for('main.character_detail', character_id=row.character_id) }}">{{ row.character.name }}</a>
-                {% elif row.merchandise %}
-                  <a href="{{ url_for('main.merchandise_detail', item_id=row.merchandise_id) }}">{{ row.merchandise.name }}</a>
-                {% elif row.event %}
-                  <a href="{{ url_for('main.events', event=row.event_id) }}#{{ row.event_id }}">{{ row.event.title }}</a>
+              {% if row.content %}
+                {% if row.content.published %}
+                  <a href="{{ url_for('main.content_detail', slug=row.content.slug) }}">{{ row.content.title }}</a>
                 {% else %}
-                  <span>Saved item</span>
+                  <span>{{ row.content.title }}</span>
                 {% endif %}
-              </div>
-              {% if row.note %}<p>{{ row.note }}</p>{% endif %}
+              {% elif row.character %}
+                <a href="{{ url_for('main.character_detail', character_id=row.character_id) }}">{{ row.character.name }}</a>
+              {% elif row.merchandise %}
+                <a href="{{ url_for('main.merchandise_detail', item_id=row.merchandise_id) }}">{{ row.merchandise.name }}</a>
+              {% elif row.event %}
+                <a href="{{ url_for('main.event_detail', event_id=row.event_id) }}">{{ row.event.title }}</a>
+              {% else %}
+                <span>Saved item</span>
+              {% endif %}
             </li>
           {% endfor %}
         </ul>
-        {{ pager(page, pages, 'account.dashboard', {'kind': kind} if kind else {}) }}
-      {% else %}
-        <p class="empty-line">No bookmarks{% if kind %} in this type{% endif %} yet.</p>
       {% endif %}
+      <p><a class="button" href="{{ url_for('account.bookmarks') }}">Open bookmarks</a></p>
     </section>
 
     <section class="panel-card">
       <header class="panel-head">
         <h2>What you sent</h2>
-        <p>Pending, returned, and published pieces are on their own page.</p>
+        <p>{% if sent_count == 1 %}1 piece.{% elif sent_count %}{{ sent_count }} pieces.{% else %}Nothing sent yet.{% endif %} The five newest are here.</p>
       </header>
+      {% if recent_sent %}
+        <ul class="desk-list">
+          {% for row in recent_sent %}
+            <li>
+              <div class="row-title">
+                <strong>{{ row.title }}</strong>
+                <span class="chip chip-{{ row.status }}">{% if row.status == 'approved' %}Published{% elif row.status == 'rejected' %}Sent back{% else %}Pending{% endif %}</span>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
       <p><a class="button" href="{{ url_for('account.sent_pieces') }}">Open what you sent</a></p>
     </section>
   </div>

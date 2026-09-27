@@ -151,7 +151,85 @@
   </form>
   </section>
 
+  {% if shelves %}
+    <section class="section" aria-labelledby="featured-shelf">
+      <div class="section-head"><h2 id="featured-shelf">Featured</h2></div>
+      {% if shelves.featured %}
+        <ul class="card-grid">
+          {% for item in shelves.featured %}
+            <li><a class="content-card" href="{{ url_for('main.content_detail', slug=item.slug) }}"><span class="type">{{ item.content_type }}</span><h2>{{ item.title }}</h2><p>{{ item.summary }}</p></a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">Nothing is marked featured in this category yet.</p>
+      {% endif %}
+    </section>
+    <section class="section" aria-labelledby="article-shelf">
+      <div class="section-head">
+        <h2 id="article-shelf">Articles</h2>
+        <a href="{{ url_for('main.explore', category=filters.category, type='article') }}">All articles</a>
+      </div>
+      {% if shelves.articles %}
+        <ul class="card-grid">
+          {% for item in shelves.articles %}
+            <li><a class="content-card" href="{{ url_for('main.content_detail', slug=item.slug) }}"><span class="type">Article</span><h2>{{ item.title }}</h2><p>{{ item.summary }}</p></a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No articles in this category yet.</p>
+      {% endif %}
+    </section>
+    <section class="section" aria-labelledby="media-shelf">
+      <div class="section-head">
+        <h2 id="media-shelf">Media</h2>
+        <a href="{{ url_for('main.media_center') }}">Open the media desk</a>
+      </div>
+      {% if shelves.media %}
+        <ul class="card-grid">
+          {% for item in shelves.media %}
+            <li><a class="content-card" href="{{ url_for('main.content_detail', slug=item.slug) }}"><span class="type">{{ item.content_type }}</span><h2>{{ item.title }}</h2><p>{{ item.summary }}</p></a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No video, audio, or image sets in this category yet.</p>
+      {% endif %}
+    </section>
+    <section class="section" aria-labelledby="cast-shelf">
+      <div class="section-head">
+        <h2 id="cast-shelf">Characters</h2>
+        <a href="{{ url_for('main.characters', category=filters.category) }}">All characters</a>
+      </div>
+      {% if shelves.characters %}
+        <ul class="card-grid">
+          {% for person in shelves.characters %}
+            <li><a class="content-card" href="{{ url_for('main.character_detail', character_id=person.character_id) }}"><span class="type">Character</span><h2>{{ person.name }}</h2></a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No character profiles in this category yet.</p>
+      {% endif %}
+    </section>
+    <section class="section" aria-labelledby="merch-shelf">
+      <div class="section-head">
+        <h2 id="merch-shelf">Merchandise</h2>
+        <a href="{{ url_for('main.merchandise', category=filters.category) }}">All merchandise</a>
+      </div>
+      {% if shelves.merchandise %}
+        <ul class="card-grid">
+          {% for product in shelves.merchandise %}
+            <li><a class="content-card" href="{{ url_for('main.merchandise_detail', item_id=product.item_id) }}"><span class="type">Display</span><h2>{{ product.name }}</h2></a></li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No merchandise on display in this category yet.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
   {% if items %}
+    {% if shelves %}
+      <div class="section-head"><h2>All titles</h2></div>
+    {% endif %}
     <ul class="card-grid">
       {% for item in items %}
         <li>

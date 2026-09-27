@@ -64,7 +64,7 @@
           <li>
             <a class="content-card" href="{{ url_for('main.merchandise_detail', item_id=card.row.item_id) }}">
               {% if card.row.image_url %}
-                <img src="{{ url_for('static', filename='images/catalog/' + card.row.image_url) }}" alt="" />
+                <img src="{{ card.row.image_url|shot }}" alt="" />
               {% endif %}
               <div class="card-copy">
                 <span class="type">{% if card.row.is_upcoming %}Upcoming{% else %}Merch{% endif %}</span>

@@ -1,29 +1,47 @@
 {% extends "base.html" %}
 {% block title %}Feedback · Fan Hub Plus{% endblock %}
-{% block body_class %}stack-news auth{% endblock %}
+{% block body_class %}stack-cosplay auth desk{% endblock %}
 {% block content %}
-<section class="auth-panel">
-  <h1>Feedback</h1>
-  <form method="post" id="feedback-form" class="desk-form fan-card">
-    <label for="kind">Type</label>
-    <select id="kind" name="kind" required>
-      <option value="suggestion">Suggestion</option>
-      <option value="bug">Bug</option>
-      <option value="query">Question</option>
-    </select>
-    {% if not current_user %}
-      <label for="email">Email</label>
-      <input id="email" name="email" type="email" required placeholder="you@example.com" />
-    {% endif %}
-    <div id="bug-fields" hidden>
-      <label for="page_url">Page where it happened</label>
-      <input id="page_url" name="page_url" placeholder="/explore" />
-      <label for="steps">Steps to see it again</label>
-      <textarea id="steps" name="steps" rows="3" placeholder="What you clicked, and what you expected to see"></textarea>
+<section class="auth-panel desk-panel">
+  <header class="desk-top">
+    <div>
+      <p class="kicker">Member desk</p>
+      <h1>Feedback</h1>
+      <p>Send a suggestion, a question, or the steps for a bug. A bug report needs the page and the steps.</p>
     </div>
-    <label for="message">Message</label>
-    <textarea id="message" name="message" rows="5" data-rich placeholder="What should we know?"></textarea>
-    {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
+    <nav class="desk-actions" aria-label="Feedback actions">
+      <a href="{{ url_for('account.profile') }}">Profile</a>
+      <a href="{{ url_for('account.bookmarks') }}">Bookmarks</a>
+    </nav>
+  </header>
+  <form method="post" id="feedback-form" class="desk-form fan-card">
+    <label for="kind">Type
+      <select id="kind" name="kind" required {% if errors.get('kind') %}class="is-invalid" aria-invalid="true"{% endif %}>
+        <option value="suggestion" {% if preset_kind == 'suggestion' or not preset_kind %}selected{% endif %}>Suggestion</option>
+        <option value="bug" {% if preset_kind == 'bug' %}selected{% endif %}>Bug</option>
+        <option value="query" {% if preset_kind == 'query' %}selected{% endif %}>Question</option>
+      </select>
+      {% if errors.get('kind') %}<small class="field-error" role="alert">{{ errors.kind }}</small>{% endif %}
+    </label>
+    {% if not current_user %}
+      <label for="email">Email
+        <input id="email" name="email" type="email" required placeholder="you@example.com" value="{{ preset_email or '' }}" {% if errors.get('email') %}class="is-invalid" aria-invalid="true"{% endif %} />
+        {% if errors.get('email') %}<small class="field-error" role="alert">{{ errors.email }}</small>{% endif %}
+      </label>
+    {% endif %}
+    <div id="bug-fields" {% if preset_kind != 'bug' and not errors.get('steps') %}hidden{% endif %}>
+      <label for="page_url">Page where it happened
+        <input id="page_url" name="page_url" placeholder="/explore" value="{{ preset_page or '' }}" />
+      </label>
+      <label for="steps">Steps to see it again
+        <textarea id="steps" name="steps" rows="3" placeholder="What you clicked, and what you expected to see" {% if errors.get('steps') %}class="is-invalid" aria-invalid="true"{% endif %}>{{ preset_steps or '' }}</textarea>
+        {% if errors.get('steps') %}<small class="field-error" role="alert">{{ errors.steps }}</small>{% endif %}
+      </label>
+    </div>
+    <label for="message">Message
+      <textarea id="message" name="message" rows="5" required data-rich placeholder="What should we know?" {% if errors.get('message') %}class="is-invalid" aria-invalid="true"{% endif %}>{{ preset_message or '' }}</textarea>
+      {% if errors.get('message') %}<small class="field-error" role="alert">{{ errors.message }}</small>{% endif %}
+    </label>
     <button type="submit">Send</button>
   </form>
 </section>
@@ -32,8 +50,26 @@
 <script>
   const kind = document.querySelector("#kind");
   const bug = document.querySelector("#bug-fields");
+  const form = document.querySelector("#feedback-form");
   function sync() { bug.hidden = kind.value !== "bug"; }
   kind.addEventListener("change", sync);
   sync();
+  form.addEventListener("submit", function (event) {
+    const area = form.querySelector("#message");
+    const editable = form.querySelector(".ck-editor__editable");
+    const raw = editable ? (editable.innerText || "") : (area.value || "");
+    const text = raw.replace(/\s+/g, " ").trim();
+    const note = form.querySelector(".field-error.js");
+    if (note) note.remove();
+    if (text) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const warn = document.createElement("small");
+    warn.className = "field-error js";
+    warn.setAttribute("role", "alert");
+    warn.textContent = "Write the feedback before sending it.";
+    area.insertAdjacentElement("afterend", warn);
+    area.classList.add("is-invalid");
+  }, true);
 </script>
 {% endblock %}
