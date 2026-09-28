@@ -1,102 +1,119 @@
-# Fan Hub Plus (Flask + MySQL)
+# Fan Hub Plus
 
-JSON APIs live under **`/api/be/v1`**. Responses are `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "...", "message": "..." }`.  
-Auth: `Authorization: Bearer <access_token>`.
+Cổng thông tin fandom: tám danh mục (Anime, Gaming, Movies, TV Shows, K-Pop, Comics, Manga, Cosplay). Khách xem nội dung, thành viên đánh dấu, đánh giá và gửi bài, quản trị viên duyệt và quản lý dữ liệu. Merchandise chỉ trưng bày, không bán hàng.
 
-The site and the APIs share Laragon MySQL database `fanhubplus` (`DATABASE_URL=mysql+pymysql://root@127.0.0.1:3306/fanhubplus`). Import `sql/fanhubplus_all_in_one.sql` once if the schema is empty.
+Bản đang chạy: [https://fanhubplus.onrender.com/](https://fanhubplus.onrender.com/)
 
-## Run (Git Bash)
+## Công nghệ
+
+| Phần | Công nghệ |
+|---|---|
+| Web | Python 3, Flask, Jinja2, HTML, CSS, JavaScript |
+| Dữ liệu | MySQL hoặc MariaDB, SQLAlchemy, Flask-SQLAlchemy, PyMySQL |
+| Kiểm tra dữ liệu | Pydantic |
+| Đăng nhập | Phiên Flask cho trang web; JWT (PyJWT) cho API `/api/be/v1` |
+| Mật khẩu | bcrypt |
+| Bản đồ sự kiện | Leaflet, nền bản đồ Esri |
+| Email | In ra console khi phát triển, hoặc SMTP khi cấu hình |
+| AI | Google Gemini cho chatbot Mina. Không có API key thì Mina trả lời từ FAQ và các câu soạn sẵn trong ứng dụng |
+| Host | [Render](https://fanhubplus.onrender.com/) |
+
+Chatbot nằm ở nút Mina góc phải. Khi `GEMINI_API_KEY` có giá trị, câu hỏi được gửi tới Gemini (mặc định model `gemini-3.8-flash`). Câu trả lời bị giới hạn trong nội dung trên hub. Gemini lỗi hoặc không có key thì hệ thống dùng FAQ và hướng dẫn từng bước (duyệt danh mục, tìm kiếm, đánh dấu, sự kiện). Lịch sử chat của khách gắn với phiên trình duyệt; của thành viên gắn với tài khoản.
+
+## Cài đặt trên máy
+
+Cần Python 3.11 trở lên và một máy chủ MySQL hoặc MariaDB (XAMPP, Laragon, hoặc cài riêng).
+
+1. Tải mã nguồn và vào thư mục dự án.
+2. Tạo cơ sở dữ liệu và nạp schema (làm một lần):
 
 ```bash
-cd /c/Users/ADMIN/FanHubPlus
-source .venv/Scripts/activate
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS fanhubplus CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -u root fanhubplus < sql/fanhubplus_all_in_one.sql
+```
+
+Nếu máy chủ MySQL có mật khẩu, thêm `-p` sau `root`.
+
+3. Tạo môi trường ảo và cài thư viện.
+
+Windows (PowerShell):
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+macOS hoặc Linux:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+4. Sao chép cấu hình:
+
+```bash
+copy .env.example .env
+```
+
+Trên macOS hoặc Linux dùng `cp .env.example .env`. Sửa `DATABASE_URL` cho đúng user, mật khẩu và cổng MySQL. Đổi `SECRET_KEY` thành một chuỗi dài ngẫu nhiên. Muốn Mina dùng Gemini thì dán khóa từ [Google AI Studio](https://aistudio.google.com/) vào `GEMINI_API_KEY`. Để trống khóa thì chatbot vẫn chạy bằng FAQ.
+
+5. Chạy:
+
+```bash
 python run.py
 ```
 
-- http://127.0.0.1:5000
-- http://127.0.0.1:5000/health
-- http://127.0.0.1:5000/explore
-- Site admin (`/admin/login`): `admin@fanhub.plus` / `AdminHub#2026`
-- API admin (`POST /api/be/v1/auth/admin/login`): `admin@fanhubplus.com` / `Admin123!` (also works on `/admin/login`)
-- Demo member: `mina@fanhub.plus` / `MemberHub#2026`
+Mở http://127.0.0.1:5000. Kiểm tra sống của ứng dụng: http://127.0.0.1:5000/health.
 
-## API use cases
+Lần chạy đầu, ứng dụng tạo tài khoản quản trị từ `SEED_ADMIN_EMAIL` và `SEED_ADMIN_PASSWORD` trong `.env` nếu email đó chưa có trong cơ sở dữ liệu.
 
-| UC | Method | Path | Who |
+## Tài khoản dùng thử
+
+Các tài khoản này có trong dữ liệu mẫu của bản local. Bản trên Render dùng cùng loại tài khoản nếu cơ sở dữ liệu đã được nạp dữ liệu mẫu.
+
+| Vai trò | Email | Mật khẩu | Vào đâu |
 |---|---|---|---|
-| UC-01 Register | POST | `/auth/register` | Visitor |
-| UC-01 Verify | GET/POST | `/auth/verify-email` | Visitor |
-| UC-01 Resend | POST | `/auth/resend-verification` | Visitor |
-| UC-02 Login | POST | `/auth/login` | Member |
-| UC-02 Logout | POST | `/auth/logout` | Member |
-| UC-02 Refresh | POST | `/auth/refresh` | Member |
-| UC-02 Me | GET | `/auth/me` | Member |
-| UC-03 Forgot | POST | `/auth/forgot-password` | Visitor |
-| UC-03 Reset | POST | `/auth/reset-password` | Visitor |
-| UC-05 Admin login | POST | `/auth/admin/login` | Admin |
-| UC-16 Profile | PATCH | `/me` | Member |
-| UC-16 Favorites | PUT | `/me/favorites` | Member |
-| UC-16 Dashboard | GET/PUT | `/me/dashboard` | Member |
-| UC-06 Categories | GET | `/categories`, `/categories/<id>/fandoms` | Public |
-| UC-06 Fandoms | GET | `/fandoms` | Public (`is_active` only) |
-| UC-07 Explorer | GET | `/contents?q=&category_id=&fandom_id=&genre_id=&type=&year=&sort=` | Public |
-| UC-07/09 Detail | GET | `/contents/<id>` | Public (increments views) |
-| UC-09 Featured | GET | `/contents/featured` | Public |
-| UC-08 Characters | GET | `/characters`, `/characters/<id>` | Public |
-| UC-10 Merch | GET | `/merchandise`, `/merchandise/upcoming`, `/merchandise/<id>` | Public (display only) |
-| UC-11/12 Rate | POST | `/contents/<id>/ratings` `{score:1-5}` | Member |
-| UC-13 Bookmark | GET/POST | `/bookmarks` | Member |
-| UC-13 Note | PATCH | `/bookmarks/<id>` | Member |
-| UC-13 Remove | DELETE | `/bookmarks/<id>` | Member |
-| UC-13 Share | POST | `/bookmarks/<id>/share` | Member |
-| UC-13 Shared | GET | `/bookmarks/shared/<token>` | Public |
-| UC-14 Submit | POST/GET | `/submissions` | Member |
-| UC-14 Resubmit | PUT | `/submissions/<id>/resubmit` | Member (rejected) |
-| UC-15 Feedback | POST | `/feedback` | Public (visitor bắt buộc email) |
-| UC-17/18 Events | GET | `/events?city=&event_type=&lat=&lng=&radius_km=` | Public |
-| UC-19 Theme | PATCH | `/me` `{theme, font_size}` | Member |
-| UC-20/21 Chat | POST | `/chat/sessions`, `/chat/messages` | Public |
-| UC-20 History | GET | `/chat/sessions/<token>/history` | Public |
-| UC-22 Admin cat/fandom | PUT/POST/DELETE | `/admin/categories/<id>`, `/admin/fandoms` | Admin |
-| UC-23 Admin tags | POST/PUT/DELETE | `/admin/tags` | Admin |
-| UC-22/23 CRUD content | POST/PUT/DELETE | `/admin/contents` | Admin |
-| UC-08 Admin character | POST/PUT/DELETE | `/admin/characters` | Admin |
-| UC-10 Admin merch | POST/PUT/DELETE | `/admin/merchandise` | Admin |
-| UC-17 Admin event | POST/PUT/DELETE | `/admin/events` | Admin |
-| UC-24 Queue | GET | `/admin/submissions` | Admin |
-| UC-24 Review | POST | `/admin/submissions/<id>/review` `{decision, reject_reason, tag_ids}` | Admin |
-| UC-25 Feedback admin | GET/PATCH/DELETE | `/admin/feedback` | Admin |
-| UC-26 Users | GET/PATCH | `/admin/users` | Admin |
-| UC-26 Lock | POST | `/admin/users/<id>/lock` `/unlock` | Admin |
-| UC-27 FAQ admin | GET/POST/PUT/DELETE | `/admin/faqs` | Admin |
-| UC-28 Reports | GET | `/admin/reports/overview` `user-growth` `content-performance` `category-performance` `engagement` `submissions-feedback` | Admin |
+| Thành viên | `mina@fanhub.plus` | `MemberHub#2026` | Sign in trên trang web |
+| Quản trị | `admin@fanhub.plus` | `AdminHub#2026` | `/admin/login` |
+| Quản trị API | `admin@fanhubplus.com` | `Admin123!` | `POST /api/be/v1/auth/admin/login`, cũng đăng nhập được ở `/admin/login` |
 
-`sort` for explorer: `latest` | `popular` | `alpha`. Guests may use `q`, `category_id`, `type` only; advanced filters return `login_required`. Drafts and archived rows stay off the public lists.
+## Cách dùng trang web
 
-**BR-09 popularity:** `views + 5*rating_count + round(avg*10) + 3*bookmark_count` (same as `fn_popularity_score`).
+### Khách
 
-**BR-12:** GPS coordinates are accepted on query `lat`/`lng` only and are not stored.
+- Trang chủ có sitemap, tám danh mục (tên, mô tả, ảnh bìa) và ô tìm theo từ khóa.
+- Explore mở một danh mục: bài nổi bật, bài viết, media, nhân vật, merchandise, kèm breadcrumb.
+- Khách tìm theo từ khóa và danh mục. Lọc theo fandom, thể loại, năm, độ phổ biến hoặc sắp xếp nâng cao thì phải đăng nhập; sau khi đăng nhập hệ thống đưa về đúng trang đang xem.
+- Media phát video, trailer hoặc audio trên trang. Characters lọc theo danh mục và fandom. Merch chỉ xem, không có giỏ hàng hay thanh toán. Upcoming liệt kê lịch phát hành.
+- Events có bản đồ và lịch. Cho phép vị trí thì sự kiện sắp theo khoảng cách; từ chối thì chọn thành phố, loại sự kiện và khoảng ngày. Liên kết vé mở tab mới. Tọa độ không được lưu.
+- Nút **A** trên header đổi cỡ chữ. Lựa chọn của khách lưu trên trình duyệt.
+- Feedback: chọn lỗi, góp ý hoặc câu hỏi. Báo lỗi thì điền trang và các bước tái hiện. Khách phải để email.
+- Nút Mina mở chat.
 
-**UC-04:** `GET /me`, `PUT /me/favorites`, `POST /me/avatar` (JPEG/PNG/WebP, ≤2MB).
+### Thành viên
 
-**UC-06 hub:** `GET /categories/<id>` returns featured, articles, media, characters, merchandise, plus breadcrumbs.
+Đăng ký bằng họ tên, email và mật khẩu. Mở liên kết xác minh trong email (khi phát triển, nội dung email in ở console). Tài khoản mới sau khi đăng nhập vào form hồ sơ để chọn fandom và danh mục quan tâm. Lần sau vào trang Profile.
 
-**UC-10 upcoming:** `GET /releases/upcoming`.
+- Profile: lời chào, thông báo duyệt bài, hoạt động gần đây, nội dung theo fandom, bookmark và bài đã gửi. **Edit profile** mở form sửa.
+- Trên bài, media, nhân vật, merchandise hoặc sự kiện: đánh dấu, ghi chú, bỏ đánh dấu. Đánh giá media từ 1 đến 5 sao, mỗi người một đánh giá và được sửa.
+- Contribute: gửi bài fan (tiêu đề, danh mục, fandom, nội dung, ảnh hoặc media). Phải xác nhận có quyền chia sẻ. Bài ở trạng thái chờ duyệt. What you sent theo dõi trạng thái; bài bị từ chối xem được lý do rồi sửa và gửi lại.
+- Cỡ chữ và giao diện của thành viên lưu theo tài khoản.
 
-**UC-13:** A second POST bookmark removes it; `?type=content|character|merchandise|event`; hidden items return `available: false`.
+### Quản trị
 
-**UC-21:** `POST /chat/onboarding` `{action: next|skip|set_categories}`.
+Vào `/admin/login`. Thành viên mở thẳng URL quản trị sẽ bị từ chối.
 
-**UC-24 notices:** console email plus `GET /me/notifications`. Unpublish: `POST /admin/submissions/<id>/unpublish`.
+- Dashboard: số liệu sử dụng, lọc theo khoảng thời gian.
+- Categories: thêm, sửa tên, mô tả và ảnh bìa (dán link hoặc tải file). Xóa chỉ khi danh mục chưa được dùng.
+- Fandoms, Catalog, Characters, Merchandise, Events, Tags, FAQ: thêm, sửa, ẩn hoặc xóa. Bài ẩn không còn trên trang công khai.
+- Review: hàng đợi bài fan, cũ hơn trước. Duyệt để xuất bản, hoặc từ chối kèm lý do. Người gửi nhận thông báo.
+- Feedback: lọc theo loại và trạng thái, cập nhật trạng thái, xóa phản hồi.
+- Members: tìm thành viên, khóa hoặc mở khóa. Tài khoản bị khóa không đăng nhập được.
+- Record: nhật ký thao tác quản trị.
 
+## API
 
-## MySQL (Laragon)
-
-```bash
-mysql -u root < sql/fanhubplus_all_in_one.sql
-mysql -u root fanhubplus < sql/user_sessions.sql
-```
-
-```
-DATABASE_URL=mysql+pymysql://root@127.0.0.1:3306/fanhubplus
-```
+Trang web và API dùng chung cơ sở dữ liệu. API JSON nằm dưới `/api/be/v1`, xác thực bằng `Authorization: Bearer <access_token>`. Phản hồi dạng `{ "ok": true, "data": ... }` hoặc `{ "ok": false, "error": "...", "message": "..." }`.
